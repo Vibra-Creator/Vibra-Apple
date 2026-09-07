@@ -70,10 +70,28 @@ jobs:
           security default-keychain \
             -s "$KEYCHAIN_PATH"
 
+          echo "===== CERTIFICATI PRESENTI ====="
+
           security find-identity \
             -v \
             -p codesigning \
             "$KEYCHAIN_PATH"
+
+          echo "===== DETTAGLI CERTIFICATO APPLE DISTRIBUTION ====="
+
+          security find-certificate \
+            -a \
+            -c "Apple Distribution" \
+            -p \
+            "$KEYCHAIN_PATH" > "$RUNNER_TEMP/distribution_cert.pem"
+
+          openssl x509 \
+            -in "$RUNNER_TEMP/distribution_cert.pem" \
+            -noout \
+            -subject \
+            -issuer \
+            -fingerprint \
+            -sha1
 
       - name: Installa Provisioning Profile
         env:
@@ -93,16 +111,30 @@ jobs:
             plutil -extract Name raw -
           )
 
+          PROFILE_TEAM=$(
+            security cms -D -i "$PROFILE_PATH" |
+            plutil -extract TeamIdentifier.0 raw -
+          )
+
+          PROFILE_APP_ID=$(
+            security cms -D -i "$PROFILE_PATH" |
+            plutil -extract Entitlements.application-identifier raw -
+          )
+
+          echo "===== PROVISIONING PROFILE ====="
+          echo "Nome: $PROFILE_NAME"
+          echo "UUID: $PROFILE_UUID"
+          echo "Team ID: $PROFILE_TEAM"
+          echo "Application ID: $PROFILE_APP_ID"
+
+          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
 
           cp "$PROFILE_PATH" \
             "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
 
-          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
-
-          echo "Provisioning Profile installato"
-          echo "Nome: $PROFILE_NAME"
-          echo "UUID: $PROFILE_UUID"
+          echo "Provisioning Profile installato correttamente"
 
       - name: Crea archivio senza forzare firma sui Pods
         run: |
@@ -152,6 +184,9 @@ jobs:
           </dict>
           </plist>
           EOF
+
+          echo "===== EXPORT OPTIONS ====="
+          cat "$RUNNER_TEMP/ExportOptions.plist"
 
       - name: Firma e crea IPA
         run: |
