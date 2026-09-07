@@ -8,25 +8,35 @@ jobs:
     runs-on: macos-26
 
     steps:
-      - name: Scarica il progetto
+      - name: Scarica il repository
         uses: actions/checkout@v4
 
-      - name: Mostra i file
+      - name: Estrai il progetto PWA Builder
         run: |
-          echo "Contenuto repository:"
-          ls -la
-          echo "Progetti Xcode:"
-          find . -name "*.xcodeproj" -o -name "*.xcworkspace"
+          unzip -q "Vibra (8).zip" -d vibra_source
+          echo "Contenuto estratto:"
+          find vibra_source -maxdepth 3 -type f | head -100
+
+      - name: Trova progetto Xcode
+        run: |
+          XCODEPROJ=$(find vibra_source -name "*.xcodeproj" -type d | head -1)
+          echo "XCODEPROJ=$XCODEPROJ" >> $GITHUB_ENV
+          echo "Progetto trovato: $XCODEPROJ"
 
       - name: Installa CocoaPods
         run: |
-          sudo gem install cocoapods
+          cd "$(dirname "$XCODEPROJ")"
           pod install
 
       - name: Compila Vibra
         run: |
+          PROJECT_DIR=$(dirname "$XCODEPROJ")
+          WORKSPACE=$(find "$PROJECT_DIR" -maxdepth 1 -name "*.xcworkspace" -type d | head -1)
+
+          echo "Workspace: $WORKSPACE"
+
           xcodebuild \
-            -workspace Vibra.xcworkspace \
+            -workspace "$WORKSPACE" \
             -scheme Vibra \
             -sdk iphoneos \
             -configuration Release \
