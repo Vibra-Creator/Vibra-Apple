@@ -14,8 +14,6 @@ jobs:
       - name: Estrai il progetto PWA Builder
         run: |
           unzip -q "Vibra (8).zip" -d vibra_source
-          echo "Contenuto estratto:"
-          find vibra_source -maxdepth 3 -type f | head -100
 
       - name: Trova progetto Xcode
         run: |
@@ -28,17 +26,60 @@ jobs:
           cd "$(dirname "$XCODEPROJ")"
           pod install
 
-      - name: Compila Vibra
+      - name: Installa certificato e provisioning profile
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/vibra_distribution.p12
+          PROFILE_PATH=$RUNNER_TEMP/VibraAppStore.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/vibra-signing.keychain-db
+
+          echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$CERTIFICATE_PATH" \
+            -P "$P12_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/"
+
+      - name: Crea archivio firmato
         run: |
           PROJECT_DIR=$(dirname "$XCODEPROJ")
           WORKSPACE=$(find "$PROJECT_DIR" -maxdepth 1 -name "*.xcworkspace" -type d | head -1)
-
-          echo "Workspace: $WORKSPACE"
 
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme Vibra \
             -sdk iphoneos \
             -configuration Release \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+            -archivePath "$RUNNER_TEMP/Vibra.xcarchive" \
+            archive
+
+      - name: Crea IPA
+        run: |
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$RUNNER_TEMP/Vibra.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$GITHUB_WORKSPACE/ExportOptions.plist"
+
+      - name: Salva IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vibra-IPA
+          path: ${{ runner.temp }}/export/*.ipa
