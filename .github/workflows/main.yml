@@ -18,7 +18,7 @@ jobs:
       - name: Trova progetto Xcode
         run: |
           XCODEPROJ=$(find vibra_source -name "*.xcodeproj" -type d | head -1)
-          echo "XCODEPROJ=$XCODEPROJ" >> $GITHUB_ENV
+          echo "XCODEPROJ=$XCODEPROJ" >> "$GITHUB_ENV"
           echo "Progetto trovato: $XCODEPROJ"
 
       - name: Installa CocoaPods
@@ -33,9 +33,9 @@ jobs:
           BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
-          CERTIFICATE_PATH=$RUNNER_TEMP/vibra_distribution.p12
-          PROFILE_PATH=$RUNNER_TEMP/VibraAppStore.mobileprovision
-          KEYCHAIN_PATH=$RUNNER_TEMP/vibra-signing.keychain-db
+          CERTIFICATE_PATH="$RUNNER_TEMP/vibra_distribution.p12"
+          PROFILE_PATH="$RUNNER_TEMP/VibraAppStore.mobileprovision"
+          KEYCHAIN_PATH="$RUNNER_TEMP/vibra-signing.keychain-db"
 
           echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
           echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
@@ -54,24 +54,41 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security default-keychain -s "$KEYCHAIN_PATH"
 
-          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/"
+          PROFILE_UUID=$(
+            security cms -D -i "$PROFILE_PATH" |
+            plutil -extract UUID raw -
+          )
 
-      - name: Crea archivio firmato
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE_PATH" \
+            "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+
+          echo "Provisioning Profile UUID: $PROFILE_UUID"
+
+      - name: Compila e crea archivio firmato
         run: |
           PROJECT_DIR=$(dirname "$XCODEPROJ")
           WORKSPACE=$(find "$PROJECT_DIR" -maxdepth 1 -name "*.xcworkspace" -type d | head -1)
 
+          echo "Workspace: $WORKSPACE"
+
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme Vibra \
-            -sdk iphoneos \
             -configuration Release \
+            -sdk iphoneos \
             -archivePath "$RUNNER_TEMP/Vibra.xcarchive" \
+            DEVELOPMENT_TEAM=MA8PHU39TR \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="VibraAppStore" \
             archive
 
       - name: Crea IPA
         run: |
+          PROJECT_DIR=$(dirname "$XCODEPROJ")
+          WORKSPACE=$(find "$PROJECT_DIR" -maxdepth 1 -name "*.xcworkspace" -type d | head -1)
+
           xcodebuild \
             -exportArchive \
             -archivePath "$RUNNER_TEMP/Vibra.xcarchive" \
