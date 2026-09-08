@@ -16,26 +16,53 @@ jobs:
         run: |
           echo "=== XCODE ==="
           xcodebuild -version
+
           echo ""
           echo "=== SDK ==="
           xcodebuild -showsdks
 
 
       # ============================================================
-      # 2. CHECKOUT REPOSITORY
+      # 2. CHECKOUT
       # ============================================================
       - name: Checkout
         uses: actions/checkout@v4
 
 
       # ============================================================
-      # 3. RECREATE XCODE PROJECT FILE
+      # 3. ANALYZE PROJECT STRUCTURE
+      # ============================================================
+      - name: Analyze project structure
+        run: |
+          echo "========================================"
+          echo " PROJECT STRUCTURE"
+          echo "========================================"
+
+          echo ""
+          echo "=== XCODEPROJ ==="
+          find . -name "*.xcodeproj" -print
+
+          echo ""
+          echo "=== WORKSPACE ==="
+          find . -name "*.xcworkspace" -print
+
+          echo ""
+          echo "=== PODFILE ==="
+          find . -name "Podfile" -print
+
+          echo ""
+          echo "=== PROJECT.PBXPROJ ==="
+          find . -name "project.pbxproj" -print
+
+
+      # ============================================================
+      # 4. PREPARE XCODE PROJECT
       # ============================================================
       - name: Prepare Xcode project
         run: |
-          echo "=== PROJECT FILES ==="
-
-          find . -name "project.pbxproj" -print
+          echo "========================================"
+          echo " PREPARAZIONE XCODE PROJECT"
+          echo "========================================"
 
           PROJECT_FILE=$(find . -name "project.pbxproj" | head -n 1)
 
@@ -44,6 +71,7 @@ jobs:
             exit 1
           fi
 
+          echo ""
           echo "Project trovato:"
           echo "$PROJECT_FILE"
 
@@ -53,19 +81,15 @@ jobs:
           echo "Project directory:"
           echo "$PROJECT_DIR"
 
-          cd "$PROJECT_DIR"
-
-          if [ ! -f "project.pbxproj" ]; then
-            echo "ERRORE: project.pbxproj mancante"
-            exit 1
-          fi
+          PROJECT_NAME=$(basename "$(dirname "$PROJECT_FILE")")
 
           echo ""
-          echo "=== XCODE PROJECT OK ==="
+          echo "Project name:"
+          echo "$PROJECT_NAME"
 
 
       # ============================================================
-      # 4. INSTALL COCOAPODS
+      # 5. INSTALL COCOAPODS
       # ============================================================
       - name: Install CocoaPods
         run: |
@@ -74,25 +98,85 @@ jobs:
 
 
       # ============================================================
-      # 5. INSTALL PODS
+      # 6. INSTALL PODS
       # ============================================================
       - name: Install Pods
         run: |
-          if [ -f "Podfile" ]; then
-            pod install --repo-update
-          else
-            echo "Podfile non trovato nella root"
-            find . -name "Podfile" -print
+          echo "========================================"
+          echo " CERCA PODFILE"
+          echo "========================================"
+
+          PODFILE=$(find . -name "Podfile" | head -n 1)
+
+          if [ -z "$PODFILE" ]; then
+            echo "ERRORE: Podfile non trovato"
+            exit 1
           fi
+
+          echo ""
+          echo "Podfile trovato:"
+          echo "$PODFILE"
+
+          POD_DIR=$(dirname "$PODFILE")
+
+          echo ""
+          echo "Cartella Podfile:"
+          echo "$POD_DIR"
+
+          cd "$POD_DIR"
+
+          echo ""
+          echo "=== CONTENUTO CARTELLA ==="
+          ls -la
+
+          echo ""
+          echo "=== XCODE PROJECT PRESENTI ==="
+          find .. -name "*.xcodeproj" -print
+
+          echo ""
+          echo "=== POD INSTALL ==="
+
+          pod install --repo-update
 
 
       # ============================================================
-      # 6. CREATE KEYCHAIN
+      # 7. FIND WORKSPACE
+      # ============================================================
+      - name: Find workspace
+        run: |
+          echo "========================================"
+          echo " CERCA WORKSPACE"
+          echo "========================================"
+
+          WORKSPACE=$(find . -name "*.xcworkspace" | grep -v Pods | head -n 1)
+
+          if [ -z "$WORKSPACE" ]; then
+            echo "ERRORE: nessun xcworkspace trovato"
+            exit 1
+          fi
+
+          echo ""
+          echo "Workspace trovato:"
+          echo "$WORKSPACE"
+
+          WORKSPACE_DIR=$(dirname "$WORKSPACE")
+
+          echo ""
+          echo "Workspace directory:"
+          echo "$WORKSPACE_DIR"
+
+
+      # ============================================================
+      # 8. CREATE KEYCHAIN
       # ============================================================
       - name: Create signing keychain
         env:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
+          echo "========================================"
+          echo " CREAZIONE KEYCHAIN"
+          echo "========================================"
+
           security create-keychain \
             -p "$KEYCHAIN_PASSWORD" \
             build.keychain
@@ -114,7 +198,7 @@ jobs:
 
 
       # ============================================================
-      # 7. IMPORT APPLE DISTRIBUTION CERTIFICATE
+      # 9. IMPORT CERTIFICATE
       # ============================================================
       - name: Import signing certificate
         env:
@@ -140,20 +224,6 @@ jobs:
             build.keychain
 
           echo ""
-          echo "=== CERTIFICATI IMPORTATI ==="
-
-          security find-identity \
-            -v \
-            -p codesigning \
-            build.keychain
-
-
-      # ============================================================
-      # 8. CHECK SIGNING CERTIFICATE
-      # ============================================================
-      - name: Check signing certificate
-        run: |
-
           echo "=== CERTIFICATI PRESENTI ==="
 
           security find-identity \
@@ -161,8 +231,16 @@ jobs:
             -p codesigning \
             build.keychain
 
-          echo ""
-          echo "=== CERTIFICATO APPLE DISTRIBUTION ==="
+
+      # ============================================================
+      # 10. CHECK CERTIFICATE
+      # ============================================================
+      - name: Check signing certificate
+        run: |
+
+          echo "========================================"
+          echo " CERTIFICATO APPLE DISTRIBUTION"
+          echo "========================================"
 
           security find-certificate \
             -a \
@@ -172,7 +250,7 @@ jobs:
 
 
       # ============================================================
-      # 9. INSTALL PROVISIONING PROFILE
+      # 11. INSTALL PROVISIONING PROFILE
       # ============================================================
       - name: Install provisioning profile
         env:
@@ -187,28 +265,36 @@ jobs:
             > "$HOME/Library/MobileDevice/Provisioning Profiles/VibraAppStoreNew.mobileprovision"
 
           echo ""
-          echo "=== PROFILO INSTALLATO ==="
+          echo "========================================"
+          echo " PROVISIONING PROFILE"
+          echo "========================================"
 
           security cms \
             -D \
             -i "$HOME/Library/MobileDevice/Provisioning Profiles/VibraAppStoreNew.mobileprovision" \
             > profile.plist
 
+          echo ""
+          echo "Nome:"
           /usr/libexec/PlistBuddy \
             -c "Print :Name" \
             profile.plist
 
+          echo ""
+          echo "UUID:"
           /usr/libexec/PlistBuddy \
             -c "Print :UUID" \
             profile.plist
 
+          echo ""
+          echo "Team:"
           /usr/libexec/PlistBuddy \
             -c "Print :TeamIdentifier:0" \
             profile.plist
 
 
       # ============================================================
-      # 10. VERIFY CERTIFICATE + PROFILE MATCH
+      # 12. VERIFY SIGNING
       # ============================================================
       - name: Verify signing configuration
         run: |
@@ -222,10 +308,6 @@ jobs:
           print("========================================")
           print(" VERIFICA SIGNING")
           print("========================================")
-
-          # --------------------------------------------------------
-          # READ PROVISIONING PROFILE
-          # --------------------------------------------------------
 
           profile_path = (
               "/Users/runner/Library/MobileDevice/"
@@ -247,6 +329,7 @@ jobs:
           team_identifier = profile.get("TeamIdentifier", [""])[0]
 
           entitlements = profile.get("Entitlements", {})
+
           application_identifier = entitlements.get(
               "application-identifier",
               ""
@@ -260,33 +343,28 @@ jobs:
           print("App ID:", application_identifier)
 
           if profile_name != "VibraAppStoreNew":
-              print("")
               print("ERRORE: profilo errato.")
               sys.exit(1)
 
           if profile_uuid != "f3184078-4f44-4244-9db2-1290b7c2b0df":
-              print("")
               print("ERRORE: UUID provisioning profile errato.")
               sys.exit(1)
 
           if team_identifier != "MA8PHU39TR":
-              print("")
               print("ERRORE: Team ID errato.")
               sys.exit(1)
 
           if application_identifier != "MA8PHU39TR.com.vibraalienmatch":
-              print("")
               print("ERRORE: App ID errato.")
               sys.exit(1)
 
           # --------------------------------------------------------
-          # READ CERTIFICATE SHA-1 FROM PROFILE
+          # SHA-1 DAL PROVISIONING PROFILE
           # --------------------------------------------------------
 
           certificates = profile.get("DeveloperCertificates", [])
 
           if not certificates:
-              print("")
               print("ERRORE: nessun certificato nel provisioning profile.")
               sys.exit(1)
 
@@ -331,8 +409,9 @@ jobs:
           for fingerprint in profile_fingerprints:
               print(fingerprint)
 
+
           # --------------------------------------------------------
-          # READ CERTIFICATE SHA-1 FROM KEYCHAIN
+          # SHA-1 DAL KEYCHAIN
           # --------------------------------------------------------
 
           output = subprocess.check_output([
@@ -372,13 +451,15 @@ jobs:
           for fingerprint in certificate_fingerprints:
               print(fingerprint)
 
+
           if not certificate_fingerprints:
               print("")
               print("ERRORE: impossibile trovare SHA-1 del certificato.")
               sys.exit(1)
 
+
           # --------------------------------------------------------
-          # COMPARE
+          # CONFRONTO
           # --------------------------------------------------------
 
           match_found = False
@@ -396,10 +477,6 @@ jobs:
               print(" ERRORE: CERTIFICATO NON COMPATIBILE")
               print("========================================")
 
-              print("")
-              print("Il certificato presente nella keychain")
-              print("NON è autorizzato dal provisioning profile.")
-
               sys.exit(1)
 
           print("========================================")
@@ -410,12 +487,17 @@ jobs:
 
 
       # ============================================================
-      # 11. CONFIGURE MAIN APP SIGNING
+      # 13. CONFIGURE APP SIGNING
       # ============================================================
       - name: Configure app signing
         run: |
 
-          PROJECT_FILE=$(find . -name "project.pbxproj" | head -n 1)
+          PROJECT_FILE=$(find . -name "project.pbxproj" | grep -v Pods | head -n 1)
+
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "ERRORE: project.pbxproj principale non trovato"
+            exit 1
+          fi
 
           echo "Project:"
           echo "$PROJECT_FILE"
@@ -426,11 +508,6 @@ jobs:
           path = Path("$PROJECT_FILE")
 
           text = path.read_text()
-
-          text = text.replace(
-              'DEVELOPMENT_TEAM = "";',
-              'DEVELOPMENT_TEAM = MA8PHU39TR;'
-          )
 
           text = text.replace(
               'DEVELOPMENT_TEAM = "";',
@@ -454,12 +531,14 @@ jobs:
 
 
       # ============================================================
-      # 12. CONFIGURE PODS SIGNING
+      # 14. CONFIGURE PODS SIGNING
       # ============================================================
       - name: Configure Pods signing
         run: |
 
-          POD_PROJECT=$(find . -path "*Pods.xcodeproj/project.pbxproj" | head -n 1)
+          POD_PROJECT=$(find . \
+            -path "*Pods.xcodeproj/project.pbxproj" \
+            | head -n 1)
 
           if [ -n "$POD_PROJECT" ]; then
 
@@ -494,53 +573,53 @@ jobs:
           PY
 
           else
+
             echo "Pods.xcodeproj non trovato."
+
           fi
 
 
       # ============================================================
-      # 13. FIND WORKSPACE
-      # ============================================================
-      - name: Check workspace
-        run: |
-
-          echo "=== WORKSPACES ==="
-
-          find . \
-            -name "*.xcworkspace" \
-            -print
-
-          if [ ! -d "Vibra.xcworkspace" ]; then
-            echo ""
-            echo "ERRORE: Vibra.xcworkspace non trovato."
-            exit 1
-          fi
-
-          echo ""
-          echo "Workspace trovato."
-
-
-      # ============================================================
-      # 14. ARCHIVE
+      # 15. ARCHIVE
       # ============================================================
       - name: Archive
         run: |
 
+          WORKSPACE=$(find . \
+            -name "*.xcworkspace" \
+            | grep -v Pods \
+            | head -n 1)
+
+          if [ -z "$WORKSPACE" ]; then
+            echo "ERRORE: workspace non trovato"
+            exit 1
+          fi
+
+          echo "Workspace:"
+          echo "$WORKSPACE"
+
+          WORKSPACE_DIR=$(dirname "$WORKSPACE")
+          WORKSPACE_FILE=$(basename "$WORKSPACE")
+
+          cd "$WORKSPACE_DIR"
+
+          echo ""
           echo "========================================"
           echo " ARCHIVE VIBRA"
           echo "========================================"
 
           xcodebuild archive \
-            -workspace Vibra.xcworkspace \
+            -workspace "$WORKSPACE_FILE" \
             -scheme Vibra \
             -configuration Release \
             -sdk iphoneos \
-            -archivePath "$PWD/Vibra.xcarchive" \
-            | tee archive.log
+            -archivePath "$GITHUB_WORKSPACE/Vibra.xcarchive" \
+            | tee "$GITHUB_WORKSPACE/archive.log"
 
           STATUS=${PIPESTATUS[0]}
 
           if [ "$STATUS" -ne 0 ]; then
+
             echo ""
             echo "========================================"
             echo " ARCHIVE FALLITO"
@@ -549,7 +628,7 @@ jobs:
             echo ""
             echo "=== ULTIME 150 RIGHE ==="
 
-            tail -n 150 archive.log
+            tail -n 150 "$GITHUB_WORKSPACE/archive.log"
 
             exit "$STATUS"
           fi
@@ -561,7 +640,7 @@ jobs:
 
 
       # ============================================================
-      # 15. CREATE EXPORT OPTIONS
+      # 16. EXPORT OPTIONS
       # ============================================================
       - name: Create ExportOptions
         run: |
@@ -603,11 +682,9 @@ jobs:
 
           echo "ExportOptions.plist creato."
 
-          cat ExportOptions.plist
-
 
       # ============================================================
-      # 16. EXPORT IPA
+      # 17. EXPORT IPA
       # ============================================================
       - name: Export IPA
         run: |
@@ -631,9 +708,6 @@ jobs:
             echo " EXPORT FALLITO"
             echo "========================================"
 
-            echo ""
-            echo "=== ULTIME 150 RIGHE ==="
-
             tail -n 150 export.log
 
             exit "$STATUS"
@@ -648,7 +722,7 @@ jobs:
 
 
       # ============================================================
-      # 17. UPLOAD IPA
+      # 18. UPLOAD IPA
       # ============================================================
       - name: Upload IPA
         uses: actions/upload-artifact@v4
@@ -659,7 +733,7 @@ jobs:
 
 
       # ============================================================
-      # 18. UPLOAD LOGS
+      # 19. UPLOAD LOGS
       # ============================================================
       - name: Upload build logs
         if: always()
