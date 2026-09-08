@@ -32,7 +32,8 @@ jobs:
       - name: Find Xcode project
         run: |
           echo "=== XCODE PROJECTS ==="
-          find . -name "*.xcodeproj" -o -name "*.xcworkspace"
-          echo ""
+        
+                   echo "=== PROJECT.PBXPROJ ==="
+          find . -name "project.pbxproj" -print echo ""
           echo "=== PODFILE ==="
           find . -name "Podfile"
