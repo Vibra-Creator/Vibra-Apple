@@ -1,4 +1,4 @@
-name: Vibra iOS - Check Signing
+name: Vibra iOS - Check Distribution
 
 on:
   workflow_dispatch:
@@ -18,21 +18,26 @@ jobs:
 
       - name: Check Xcode
         run: |
+          echo "=== XCODE ==="
           xcodebuild -version
-          xcodebuild -showsdks
+          echo ""
+          echo "=== IOS SDK ==="
+          xcodebuild -showsdks | grep -i iphoneos
 
       - name: Recreate Xcode project structure
         run: |
+          echo "=== CREAZIONE PROGETTO ==="
           mkdir -p Vibra.xcodeproj
           cp project.pbxproj Vibra.xcodeproj/project.pbxproj
 
       - name: Install Pods
         run: |
+          echo "=== POD INSTALL ==="
           pod install
 
-      - name: Check Signing Settings
+      - name: Check Distribution Settings
         run: |
-          echo "=== DEVELOPMENT TEAM ==="
+          echo "=== TEAM ID ==="
           grep -n "DEVELOPMENT_TEAM" project.pbxproj || true
 
           echo ""
@@ -40,13 +45,21 @@ jobs:
           grep -n "CODE_SIGN_IDENTITY" project.pbxproj || true
 
           echo ""
-          echo "=== PROVISIONING PROFILE ==="
-          grep -n "PROVISIONING_PROFILE" project.pbxproj || true
-
-          echo ""
           echo "=== CODE SIGN STYLE ==="
           grep -n "CODE_SIGN_STYLE" project.pbxproj || true
 
           echo ""
-          echo "=== BUNDLE IDENTIFIER ==="
+          echo "=== PROVISIONING PROFILE ==="
+          grep -n "PROVISIONING_PROFILE" project.pbxproj || true
+
+          echo ""
+          echo "=== PRODUCT BUNDLE ID ==="
           grep -n "PRODUCT_BUNDLE_IDENTIFIER" project.pbxproj || true
+
+          echo ""
+          echo "=== DEVELOPMENT TEAM FROM XCODE ==="
+          xcodebuild \
+            -workspace Vibra.xcworkspace \
+            -scheme Vibra \
+            -sdk iphoneos \
+            -showBuildSettings | grep -E "DEVELOPMENT_TEAM|CODE_SIGN|PRODUCT_BUNDLE_IDENTIFIER|PROVISIONING"
