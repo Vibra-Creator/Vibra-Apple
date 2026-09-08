@@ -73,7 +73,6 @@ jobs:
 
           echo "=== BUNDLE ID ==="
           grep -n "PRODUCT_BUNDLE_IDENTIFIER" project.pbxproj || true
-
       - name: Archive
         run: |
           xcodebuild archive \
@@ -85,7 +84,7 @@ jobs:
             DEVELOPMENT_TEAM=MA8PHU39TR \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="VibraAppStore" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
             | tee archive.log
 
       - name: Create ExportOptions.plist
