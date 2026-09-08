@@ -8,6 +8,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -52,6 +53,15 @@ jobs:
           security list-keychains -d user -s build.keychain login.keychain-db
           security default-keychain -s build.keychain
 
+      - name: Check signing certificate
+        run: |
+          echo "=== CERTIFICATI PRESENTI ==="
+          security find-identity -v -p codesigning build.keychain
+
+          echo ""
+          echo "=== SHA-1 CERTIFICATO ==="
+          security find-certificate -a -Z -c "Apple Distribution" build.keychain
+
       - name: Install provisioning profile
         env:
           BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
@@ -64,6 +74,7 @@ jobs:
       - name: Configure signing
         run: |
           mkdir -p Vibra/Entitlements
+
           cp Entitlements.plist Vibra/Entitlements/Entitlements.plist
 
           echo "=== CONFIGURING SIGNING ==="
@@ -71,9 +82,11 @@ jobs:
           sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = MA8PHU39TR;/g' project.pbxproj
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' project.pbxproj
 
+          echo ""
           echo "=== TEAM ==="
           grep -n "DEVELOPMENT_TEAM" project.pbxproj || true
 
+          echo ""
           echo "=== BUNDLE ID ==="
           grep -n "PRODUCT_BUNDLE_IDENTIFIER" project.pbxproj || true
 
@@ -106,10 +119,13 @@ jobs:
           <dict>
               <key>method</key>
               <string>app-store</string>
+
               <key>signingStyle</key>
               <string>manual</string>
+
               <key>teamID</key>
               <string>MA8PHU39TR</string>
+
               <key>provisioningProfiles</key>
               <dict>
                   <key>$BUNDLE_ID</key>
@@ -119,12 +135,19 @@ jobs:
           </plist>
           EOF
 
+          echo ""
+          echo "=== EXPORT OPTIONS ==="
+          cat ExportOptions.plist
+
       - name: Export IPA
         run: |
+          set -o pipefail
+
           xcodebuild -exportArchive \
             -archivePath "$PWD/Vibra.xcarchive" \
             -exportPath "$PWD/export" \
-            -exportOptionsPlist "$PWD/ExportOptions.plist"
+            -exportOptionsPlist "$PWD/ExportOptions.plist" \
+            | tee export.log
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
