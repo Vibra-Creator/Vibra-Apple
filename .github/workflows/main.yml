@@ -1,48 +1,39 @@
-name: Vibra iOS - Inspect Project
+name: Vibra iOS - Check Build
 
 on:
   workflow_dispatch:
 
 jobs:
-  inspect:
+  check:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show repository files
+      - name: Install CocoaPods
         run: |
-          echo "=== FILE NEL REPOSITORY ==="
-          find . -maxdepth 2 -type f | head -200
+          sudo gem install cocoapods
+          pod --version
 
-      - name: Find and extract ZIP
+      - name: Check Xcode
         run: |
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -1)
+          echo "=== XCODE VERSION ==="
+          xcodebuild -version
+          echo ""
+          echo "=== AVAILABLE SDKs ==="
+          xcodebuild -showsdks
 
-          echo "ZIP TROVATO: $ZIP_FILE"
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERRORE: Nessun file ZIP trovato"
-            exit 1
-          fi
-
-          mkdir -p extracted
-          unzip -q "$ZIP_FILE" -d extracted
-
-          echo "=== CONTENUTO ESTRATTO ==="
-          find extracted -maxdepth 4 | head -300
-
-      - name: Find iOS project files
+      - name: Install Pods
+        working-directory: extracted/src
         run: |
-          echo "=== XCODE PROJECT ==="
-          find extracted -name "*.xcodeproj" -print
+          pod install
 
-          echo "=== XCODE WORKSPACE ==="
-          find extracted -name "*.xcworkspace" -print
-
-          echo "=== PODFILE ==="
-          find extracted -name "Podfile" -print
-
-          echo "=== PACKAGE.JSON ==="
-          find extracted -name "package.json" -print
+      - name: Check Project
+        working-directory: extracted/src
+        run: |
+          echo "=== PROJECT SETTINGS ==="
+          xcodebuild \
+            -workspace Vibra.xcworkspace \
+            -scheme Vibra \
+            -showBuildSettings
