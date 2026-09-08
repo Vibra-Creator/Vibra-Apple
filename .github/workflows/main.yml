@@ -23,12 +23,12 @@ jobs:
           echo ""
           echo "=== AVAILABLE SDKs ==="
           xcodebuild -showsdks
-
-      - name: Install Pods
-        working-directory: extracted/src
+      - name: Show files
         run: |
-          pod install
-
+          echo "=== CARTELLE E FILE DEL REPOSITORY ==="
+          pwd
+          find . -maxdepth 4 -type f | sort
+  
       - name: Check Project
         working-directory: extracted/src
         run: |
