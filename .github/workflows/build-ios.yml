@@ -71,86 +71,97 @@ jobs:
           echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode \
             > "$HOME/Library/MobileDevice/Provisioning Profiles/VibraAppStore.mobileprovision"
 
-      - name: Configure signing
+      - name: Inspect provisioning profile
         run: |
-          mkdir -p Vibra/Entitlements
+          echo "=== DECODIFICA PROVISIONING PROFILE ==="
 
-          cp Entitlements.plist Vibra/Entitlements/Entitlements.plist
-
-          echo "=== CONFIGURING SIGNING ==="
-
-          sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = MA8PHU39TR;/g' project.pbxproj
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' project.pbxproj
+          security cms -D \
+            -i "$HOME/Library/MobileDevice/Provisioning Profiles/VibraAppStore.mobileprovision" \
+            > profile.plist
 
           echo ""
-          echo "=== TEAM ==="
-          grep -n "DEVELOPMENT_TEAM" project.pbxproj || true
+          echo "=== NOME PROFILO ==="
+          /usr/libexec/PlistBuddy -c "Print :Name" profile.plist || true
+
+          echo ""
+          echo "=== UUID PROFILO ==="
+          /usr/libexec/PlistBuddy -c "Print :UUID" profile.plist || true
+
+          echo ""
+          echo "=== TEAM ID ==="
+          /usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" profile.plist || true
+
+          echo ""
+          echo "=== APP ID ==="
+          /usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" profile.plist || true
 
           echo ""
           echo "=== BUNDLE ID ==="
-          grep -n "PRODUCT_BUNDLE_IDENTIFIER" project.pbxproj || true
-
-      - name: Archive
-        run: |
-          set -o pipefail
-
-          xcodebuild archive \
-            -workspace Vibra.xcworkspace \
-            -scheme Vibra \
-            -configuration Release \
-            -sdk iphoneos \
-            -archivePath "$PWD/Vibra.xcarchive" \
-            DEVELOPMENT_TEAM=MA8PHU39TR \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="VibraAppStore" \
-            | tee archive.log
-
-      - name: Create ExportOptions.plist
-        run: |
-          BUNDLE_ID=$(grep -m 1 'PRODUCT_BUNDLE_IDENTIFIER = ' project.pbxproj | sed 's/.*PRODUCT_BUNDLE_IDENTIFIER = //;s/;//;s/["]//g')
-
-          echo "Bundle ID: $BUNDLE_ID"
-
-          cat > ExportOptions.plist <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>app-store</string>
-
-              <key>signingStyle</key>
-              <string>manual</string>
-
-              <key>teamID</key>
-              <string>MA8PHU39TR</string>
-
-              <key>provisioningProfiles</key>
-              <dict>
-                  <key>$BUNDLE_ID</key>
-                  <string>VibraAppStore</string>
-              </dict>
-          </dict>
-          </plist>
-          EOF
+          /usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.developer.team-identifier" profile.plist || true
 
           echo ""
-          echo "=== EXPORT OPTIONS ==="
-          cat ExportOptions.plist
+          echo "=== CAPABILITIES ==="
+          /usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.developer.associated-domains" profile.plist || true
+          /usr/libexec/PlistBuddy -c "Print :Entitlements:aps-environment" profile.plist || true
 
-      - name: Export IPA
+          echo ""
+          echo "=== CERTIFICATI AUTORIZZATI DAL PROFILO ==="
+
+          python3 <<'PY'
+          import plistlib
+          import subprocess
+          import tempfile
+          import os
+
+          with open("profile.plist", "rb") as f:
+              profile = plistlib.load(f)
+
+          certificates = profile.get("DeveloperCertificates", [])
+
+          print("Numero certificati nel provisioning profile:", len(certificates))
+          print("")
+
+          for index, cert_data in enumerate(certificates):
+              cert_file = f"/tmp/profile-cert-{index}.cer"
+
+              with open(cert_file, "wb") as f:
+                  f.write(cert_data)
+
+              print(f"--- CERTIFICATO {index + 1} ---")
+
+              try:
+                  result = subprocess.run(
+                      [
+                          "openssl",
+                          "x509",
+                          "-inform",
+                          "der",
+                          "-in",
+                          cert_file,
+                          "-noout",
+                          "-fingerprint",
+                          "-sha1",
+                          "-subject"
+                      ],
+                      capture_output=True,
+                      text=True
+                  )
+
+                  print(result.stdout)
+
+                  if result.stderr:
+                      print(result.stderr)
+
+              finally:
+                  if os.path.exists(cert_file):
+                      os.remove(cert_file)
+          PY
+
+      - name: Stop after profile inspection
         run: |
-          set -o pipefail
-
-          xcodebuild -exportArchive \
-            -archivePath "$PWD/Vibra.xcarchive" \
-            -exportPath "$PWD/export" \
-            -exportOptionsPlist "$PWD/ExportOptions.plist" \
-            | tee export.log
-
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: Vibra-iOS-IPA
-          path: export/*.ipa
+          echo ""
+          echo "========================================"
+          echo "CONTROLLO COMPLETATO"
+          echo "Il workflow viene fermato volutamente."
+          echo "========================================"
+          exit 1
