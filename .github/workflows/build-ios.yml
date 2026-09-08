@@ -72,7 +72,7 @@ jobs:
             build.keychain
 
           echo ""
-          echo "=== SHA-1 CERTIFICATO ==="
+          echo "=== CERTIFICATO APPLE DISTRIBUTION ==="
 
           security find-certificate \
             -a \
@@ -87,14 +87,14 @@ jobs:
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
 
           echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode \
-            > "$HOME/Library/MobileDevice/Provisioning Profiles/VibraAppStore.mobileprovision"
+            > "$HOME/Library/MobileDevice/Provisioning Profiles/VibraAppStoreNew.mobileprovision"
 
       - name: Verify provisioning profile and certificate
         run: |
           echo "=== DECODIFICA PROFILO ==="
 
           security cms -D \
-            -i "$HOME/Library/MobileDevice/Provisioning Profiles/VibraAppStore.mobileprovision" \
+            -i "$HOME/Library/MobileDevice/Provisioning Profiles/VibraAppStoreNew.mobileprovision" \
             > profile.plist
 
           echo ""
@@ -133,6 +133,7 @@ jobs:
           import subprocess
           import hashlib
           import sys
+          import re
           import os
 
           with open("profile.plist", "rb") as f:
@@ -173,8 +174,9 @@ jobs:
               print(result.stdout)
 
               for line in result.stdout.splitlines():
-                  if line.startswith("sha1 Fingerprint="):
-                      fingerprint = line.split("=", 1)[1].replace(":", "").upper()
+                  if "sha1 Fingerprint=" in line:
+                      fingerprint = line.split("=", 1)[1]
+                      fingerprint = re.sub(r"[^0-9A-Fa-f]", "", fingerprint).upper()
                       profile_fingerprints.append(fingerprint)
 
               os.remove(cert_file)
@@ -198,18 +200,33 @@ jobs:
 
           output = result.stdout
 
-          certificate_fingerprint = None
+          certificate_fingerprints = []
 
           for line in output.splitlines():
-              if "SHA-1" in line:
-                  certificate_fingerprint = line.split("=")[-1].replace(":", "").strip().upper()
 
-          if not certificate_fingerprint:
+              if "SHA-1" in line.upper():
+
+                  value = line.split("=", 1)[-1]
+
+                  value = re.sub(
+                      r"[^0-9A-Fa-f]",
+                      "",
+                      value
+                  ).upper()
+
+                  if len(value) == 40:
+                      certificate_fingerprints.append(value)
+
+          if not certificate_fingerprints:
               print("ERRORE: impossibile trovare SHA-1 del certificato.")
+              print("")
+              print(output)
               sys.exit(1)
 
-          print("SHA-1 certificato GitHub:")
-          print(certificate_fingerprint)
+          print("SHA-1 certificati GitHub:")
+
+          for fp in certificate_fingerprints:
+              print(fp)
 
           print("")
           print("SHA-1 autorizzati dal profilo:")
@@ -219,15 +236,25 @@ jobs:
 
           print("")
 
-          if certificate_fingerprint not in profile_fingerprints:
+          matched = False
+
+          for certificate_fingerprint in certificate_fingerprints:
+              if certificate_fingerprint in profile_fingerprints:
+                  matched = True
+                  print("OK:")
+                  print("Il certificato GitHub è autorizzato dal provisioning profile.")
+                  print("")
+                  print("SHA-1 corrispondente:")
+                  print(certificate_fingerprint)
+                  break
+
+          if not matched:
               print("ERRORE:")
-              print("Il provisioning profile NON contiene il certificato usato da GitHub.")
+              print("Nessun certificato GitHub è autorizzato dal provisioning profile.")
               print("")
               print("La build viene fermata.")
               sys.exit(1)
 
-          print("OK:")
-          print("Il certificato GitHub è autorizzato dal provisioning profile.")
           PY
 
       - name: Install app entitlements
@@ -256,10 +283,15 @@ jobs:
               'CODE_SIGN_STYLE = Manual;'
           )
 
-          if 'PROVISIONING_PROFILE_SPECIFIER = VibraAppStore;' not in text:
+          text = text.replace(
+              'PROVISIONING_PROFILE_SPECIFIER = VibraAppStore;',
+              'PROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;'
+          )
+
+          if 'PROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;' not in text:
               text = text.replace(
                   'DEVELOPMENT_TEAM = MA8PHU39TR;',
-                  'DEVELOPMENT_TEAM = MA8PHU39TR;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = VibraAppStore;',
+                  'DEVELOPMENT_TEAM = MA8PHU39TR;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;',
               )
 
           path.write_text(text)
@@ -288,6 +320,11 @@ jobs:
 
           text = text.replace(
               'PROVISIONING_PROFILE_SPECIFIER = VibraAppStore;',
+              'PROVISIONING_PROFILE_SPECIFIER = "";'
+          )
+
+          text = text.replace(
+              'PROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;',
               'PROVISIONING_PROFILE_SPECIFIER = "";'
           )
 
@@ -365,7 +402,7 @@ jobs:
               <key>provisioningProfiles</key>
               <dict>
                   <key>com.vibraalienmatch</key>
-                  <string>VibraAppStore</string>
+                  <string>VibraAppStoreNew</string>
               </dict>
 
               <key>destination</key>
