@@ -24,16 +24,35 @@ jobs:
           echo "=== AVAILABLE SDKs ==="
           xcodebuild -showsdks
 
-      - name: Show files
+      - name: Recreate Xcode project structure
         run: |
-          echo "=== CARTELLE E FILE DEL REPOSITORY ==="
-          pwd
-          find . -maxdepth 4 -type f | sort
+          echo "=== CREAZIONE STRUTTURA XCODE ==="
 
-      - name: Find Xcode project
-        run: |
-          echo "=== PROJECT.PBXPROJ ==="
-          find . -name "project.pbxproj" -print
+          mkdir -p Vibra.xcodeproj
+          cp project.pbxproj Vibra.xcodeproj/project.pbxproj
+
+          echo "=== VERIFICA ==="
+          ls -la Vibra.xcodeproj
           echo ""
-          echo "=== PODFILE ==="
-          find . -name "Podfile" -print
+          file Vibra.xcodeproj/project.pbxproj
+
+      - name: Install Pods
+        run: |
+          echo "=== POD INSTALL ==="
+          pod install
+
+      - name: Check Project
+        run: |
+          echo "=== XCODE PROJECT ==="
+          ls -la Vibra.xcodeproj
+
+          echo ""
+          echo "=== WORKSPACE ==="
+          ls -la Vibra.xcworkspace
+
+          echo ""
+          echo "=== PROJECT SETTINGS ==="
+          xcodebuild \
+            -workspace Vibra.xcworkspace \
+            -scheme Vibra \
+            -showBuildSettings
