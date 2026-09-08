@@ -63,6 +63,9 @@ jobs:
 
       - name: Configure signing
         run: |
+          mkdir -p Vibra/Entitlements
+          cp Entitlements.plist Vibra/Entitlements/Entitlements.plist
+
           echo "=== CONFIGURING SIGNING ==="
 
           sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = MA8PHU39TR;/g' project.pbxproj
@@ -73,8 +76,11 @@ jobs:
 
           echo "=== BUNDLE ID ==="
           grep -n "PRODUCT_BUNDLE_IDENTIFIER" project.pbxproj || true
+
       - name: Archive
         run: |
+          set -o pipefail
+
           xcodebuild archive \
             -workspace Vibra.xcworkspace \
             -scheme Vibra \
