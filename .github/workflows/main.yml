@@ -23,17 +23,9 @@ jobs:
           echo ""
           echo "=== AVAILABLE SDKs ==="
           xcodebuild -showsdks
+
       - name: Show files
         run: |
           echo "=== CARTELLE E FILE DEL REPOSITORY ==="
           pwd
           find . -maxdepth 4 -type f | sort
-  
-                 -showBuildSettings
-        working-directory: extracted/src
-        run: |
-          echo "=== PROJECT SETTINGS ==="
-          xcodebuild \
-            -workspace Vibra.xcworkspace \
-            -scheme Vibra \
-            -showBuildSettings
