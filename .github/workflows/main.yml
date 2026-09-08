@@ -29,11 +29,11 @@ jobs:
           echo "=== CARTELLE E FILE DEL REPOSITORY ==="
           pwd
           find . -maxdepth 4 -type f | sort
+
       - name: Find Xcode project
         run: |
-          echo "=== XCODE PROJECTS ==="
-        
-                   echo "=== PROJECT.PBXPROJ ==="
-          find . -name "project.pbxproj" -print echo ""
+          echo "=== PROJECT.PBXPROJ ==="
+          find . -name "project.pbxproj" -print
+          echo ""
           echo "=== PODFILE ==="
-          find . -name "Podfile"
+          find . -name "Podfile" -print
