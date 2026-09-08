@@ -1,0 +1,128 @@
+name: Vibra iOS - Build IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Xcode
+        run: |
+          echo "=== XCODE ==="
+          xcodebuild -version
+          echo ""
+          echo "=== iOS SDK ==="
+          xcodebuild -showsdks | grep -i iphoneos
+
+      - name: Recreate Xcode project structure
+        run: |
+          mkdir -p Vibra.xcodeproj
+          cp project.pbxproj Vibra.xcodeproj/project.pbxproj
+
+      - name: Install CocoaPods
+        run: |
+          sudo gem install cocoapods
+          pod --version
+          pod install
+
+      - name: Install signing certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > certificate.p12
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+
+          security import certificate.p12 \
+            -P "$P12_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k build.keychain
+
+          security list-keychains -d user -s build.keychain login.keychain-db
+          security default-keychain -s build.keychain
+
+      - name: Install provisioning profile
+        env:
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+        run: |
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+
+          echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode \
+            > "$HOME/Library/MobileDevice/Provisioning Profiles/VibraAppStore.mobileprovision"
+
+      - name: Configure signing
+        run: |
+          echo "=== CONFIGURING SIGNING ==="
+
+          sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = MA8PHU39TR;/g' project.pbxproj
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' project.pbxproj
+
+          echo "=== TEAM ==="
+          grep -n "DEVELOPMENT_TEAM" project.pbxproj || true
+
+          echo "=== BUNDLE ID ==="
+          grep -n "PRODUCT_BUNDLE_IDENTIFIER" project.pbxproj || true
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -workspace Vibra.xcworkspace \
+            -scheme Vibra \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$PWD/Vibra.xcarchive" \
+            DEVELOPMENT_TEAM=MA8PHU39TR \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="VibraAppStore" \
+            | tee archive.log
+
+      - name: Create ExportOptions.plist
+        run: |
+          BUNDLE_ID=$(grep -m 1 'PRODUCT_BUNDLE_IDENTIFIER = ' project.pbxproj | sed 's/.*PRODUCT_BUNDLE_IDENTIFIER = //;s/;//;s/["]//g')
+
+          echo "Bundle ID: $BUNDLE_ID"
+
+          cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>teamID</key>
+              <string>MA8PHU39TR</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>$BUNDLE_ID</key>
+                  <string>VibraAppStore</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Export IPA
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$PWD/Vibra.xcarchive" \
+            -exportPath "$PWD/export" \
+            -exportOptionsPlist "$PWD/ExportOptions.plist"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vibra-iOS-IPA
+          path: export/*.ipa
