@@ -652,7 +652,6 @@ jobs:
             CODE_SIGN_IDENTITY="Apple Distribution" \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM="MA8PHU39TR" \
-            PROVISIONING_PROFILE_SPECIFIER="VibraAppStoreNew" \
             | tee archive.log
 
           STATUS=${PIPESTATUS[0]}
