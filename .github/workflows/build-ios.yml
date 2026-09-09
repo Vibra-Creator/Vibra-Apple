@@ -138,15 +138,6 @@ jobs:
           echo "Workspace trovato:"
           echo "$WORKSPACE"
 
-      # ============================================================
-      # CONTROLLO AGGIUNTO:
-      # verifica che GitHub stia ricevendo ESATTAMENTE
-      # il P12 e la password corretti.
-      #
-      # NON stampa mai la password.
-      # Stampa solo SHA-256.
-      # ============================================================
-
       - name: Verify P12 secrets
         env:
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -559,6 +550,34 @@ jobs:
           else
             echo "Pods.xcodeproj non trovato."
           fi
+
+      - name: Create Entitlements
+        run: |
+          echo "========================================"
+          echo " CREAZIONE ENTITLEMENTS"
+          echo "========================================"
+
+          mkdir -p "Vibra/Entitlements"
+
+          cat > "Vibra/Entitlements/Entitlements.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+          "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+          </dict>
+          </plist>
+          PLIST
+
+          echo ""
+          echo "=== ENTITLEMENTS CREATI ==="
+
+          ls -la "Vibra/Entitlements/Entitlements.plist"
+
+          echo ""
+          echo "=== CONTENUTO ==="
+
+          cat "Vibra/Entitlements/Entitlements.plist"
 
       - name: Show workspace
         run: |
