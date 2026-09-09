@@ -1,25 +1,26 @@
-name: Vibra iOS - Build App Store
+name: Vibra iOS - Build IPA
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-ios:
+
     runs-on: macos-latest
 
     steps:
 
-      # ============================================================
+      # ==========================================================
       # 1. CHECKOUT
-      # ============================================================
+      # ==========================================================
 
       - name: Checkout
         uses: actions/checkout@v4
 
 
-      # ============================================================
+      # ==========================================================
       # 2. XCODE
-      # ============================================================
+      # ==========================================================
 
       - name: Check Xcode
         run: |
@@ -30,14 +31,14 @@ jobs:
           xcodebuild -version
 
           echo ""
-          echo "=== SDK DISPONIBILI ==="
+          echo "=== SDK ==="
 
           xcodebuild -showsdks
 
 
-      # ============================================================
+      # ==========================================================
       # 3. ANALISI STRUTTURA PROGETTO
-      # ============================================================
+      # ==========================================================
 
       - name: Analyze project structure
         run: |
@@ -56,41 +57,32 @@ jobs:
           echo "=== FILE XCODE ==="
 
           find . \
-            \( -name "*.xcodeproj" \
-            -o -name "*.xcworkspace" \
-            -o -name "project.pbxproj" \
-            -o -name "Podfile" \) \
+            -maxdepth 4 \
+            \( -name "project.pbxproj" -o -name "Podfile" \) \
             -print
 
 
-      # ============================================================
-      # 4. RICREA STRUTTURA XCODEPROJ
-      # ============================================================
+      # ==========================================================
+      # 4. RICOSTRUZIONE XCODEPROJ
+      # ==========================================================
 
-      - name: Recreate Xcode project structure
+      - name: Recreate Xcode project
         run: |
           echo "========================================"
           echo " RICOSTRUZIONE XCODEPROJ"
           echo "========================================"
 
-          if [ ! -d "Vibra.xcodeproj" ]; then
-
-            echo "Creo Vibra.xcodeproj"
-
-            mkdir -p Vibra.xcodeproj
-
-            if [ -f "project.pbxproj" ]; then
-              cp project.pbxproj Vibra.xcodeproj/project.pbxproj
-            else
-              echo "ERRORE: project.pbxproj non trovato."
-              exit 1
-            fi
-
-          else
-
-            echo "Vibra.xcodeproj esiste già."
-
+          if [ ! -f "project.pbxproj" ]; then
+            echo "ERRORE: project.pbxproj non trovato."
+            exit 1
           fi
+
+          echo "Creo Vibra.xcodeproj"
+
+          mkdir -p Vibra.xcodeproj
+
+          cp project.pbxproj \
+             Vibra.xcodeproj/project.pbxproj
 
           echo ""
           echo "=== VERIFICA ==="
@@ -103,9 +95,9 @@ jobs:
           ls -lh Vibra.xcodeproj/project.pbxproj
 
 
-      # ============================================================
-      # 5. INSTALLA COCOAPODS
-      # ============================================================
+      # ==========================================================
+      # 5. COCOAPODS
+      # ==========================================================
 
       - name: Install CocoaPods
         run: |
@@ -118,9 +110,9 @@ jobs:
           pod --version
 
 
-      # ============================================================
-      # 6. INSTALLA PODS
-      # ============================================================
+      # ==========================================================
+      # 6. INSTALL PODS
+      # ==========================================================
 
       - name: Install Pods
         run: |
@@ -128,69 +120,44 @@ jobs:
           echo " INSTALLAZIONE PODS"
           echo "========================================"
 
-          if [ ! -f "Podfile" ]; then
-            echo "ERRORE: Podfile non trovato."
-            exit 1
-          fi
-
           pod install --repo-update
 
           echo ""
-          echo "=== PODS INSTALLATI ==="
-
-          find . \
-            -path "*Pods.xcodeproj*" \
-            -o -name "*.xcworkspace" \
-            | head -50
-
-
-      # ============================================================
-      # 7. TROVA WORKSPACE
-      # ============================================================
-
-      - name: Find workspace
-        run: |
-          echo "========================================"
-          echo " RICERCA WORKSPACE"
-          echo "========================================"
+          echo "=== WORKSPACE ==="
 
           find . \
             -maxdepth 3 \
             -name "*.xcworkspace" \
             -print
 
+
+      # ==========================================================
+      # 7. TROVA WORKSPACE
+      # ==========================================================
+
+      - name: Find workspace
+        run: |
+          echo "========================================"
+          echo " VERIFICA WORKSPACE"
+          echo "========================================"
+
           if [ ! -d "Vibra.xcworkspace" ]; then
-
-            WORKSPACE=$(find . \
-              -maxdepth 3 \
-              -name "*.xcworkspace" \
-              | head -n 1)
-
-            if [ -n "$WORKSPACE" ]; then
-
-              echo "Workspace trovato:"
-              echo "$WORKSPACE"
-
-              cp -R "$WORKSPACE" Vibra.xcworkspace
-
-            else
-
-              echo "ERRORE: nessun workspace trovato."
-              exit 1
-
-            fi
-
+            echo "ERRORE: Vibra.xcworkspace non trovato."
+            exit 1
           fi
 
-          echo ""
-          echo "=== WORKSPACE FINALE ==="
-
+          echo "Workspace trovato:"
           ls -la Vibra.xcworkspace
 
+          echo ""
+          echo "=== WORKSPACE DATA ==="
 
-      # ============================================================
+          cat Vibra.xcworkspace/contents.xcworkspacedata
+
+
+      # ==========================================================
       # 8. VERIFICA SECRET P12
-      # ============================================================
+      # ==========================================================
 
       - name: Verify P12 secrets
         env:
@@ -226,9 +193,9 @@ jobs:
           ls -lh test-github.p12
 
 
-      # ============================================================
-      # 9. CREA KEYCHAIN
-      # ============================================================
+      # ==========================================================
+      # 9. CREAZIONE KEYCHAIN
+      # ==========================================================
 
       - name: Create signing keychain
         env:
@@ -253,9 +220,9 @@ jobs:
             -p "$KEYCHAIN_PASSWORD" \
             "$KEYCHAIN_PATH"
 
-          security list-keychains -d user -s \
-            "$KEYCHAIN_PATH" \
-            login.keychain-db
+          security list-keychains \
+            -d user \
+            -s "$KEYCHAIN_PATH" login.keychain-db
 
           security default-keychain \
             -s "$KEYCHAIN_PATH"
@@ -263,9 +230,9 @@ jobs:
           echo "Keychain creato."
 
 
-      # ============================================================
+      # ==========================================================
       # 10. IMPORT CERTIFICATO
-      # ============================================================
+      # ==========================================================
 
       - name: Import signing certificate
         env:
@@ -275,7 +242,7 @@ jobs:
 
         run: |
           echo "========================================"
-          echo " IMPORTAZIONE CERTIFICATO"
+          echo " IMPORT CERTIFICATO"
           echo "========================================"
 
           CERTIFICATE_PATH="$RUNNER_TEMP/certificate.p12"
@@ -284,10 +251,6 @@ jobs:
           echo "$BUILD_CERTIFICATE_BASE64" \
             | base64 --decode \
             > "$CERTIFICATE_PATH"
-
-          security unlock-keychain \
-            -p "$KEYCHAIN_PASSWORD" \
-            "$KEYCHAIN_PATH"
 
           security import "$CERTIFICATE_PATH" \
             -P "$P12_PASSWORD" \
@@ -303,45 +266,28 @@ jobs:
             "$KEYCHAIN_PATH"
 
           echo ""
-          echo "=== CERTIFICATI NEL KEYCHAIN ==="
-
-          security find-identity \
-            -v \
-            -p codesigning \
-            "$KEYCHAIN_PATH"
+          echo "Certificato importato."
 
 
-      # ============================================================
-      # 11. CONTROLLO CERTIFICATO
-      # ============================================================
+      # ==========================================================
+      # 11. VERIFICA CERTIFICATO
+      # ==========================================================
 
       - name: Check signing certificate
         run: |
           echo "========================================"
-          echo " CONTROLLO APPLE DISTRIBUTION"
+          echo " VERIFICA CERTIFICATO"
           echo "========================================"
 
-          KEYCHAIN_PATH="$RUNNER_TEMP/vibra-signing.keychain-db"
-
           security find-identity \
             -v \
             -p codesigning \
-            "$KEYCHAIN_PATH"
-
-          echo ""
-          echo "=== IDENTITÀ APPLE DISTRIBUTION ==="
-
-          security find-identity \
-            -v \
-            -p codesigning \
-            "$KEYCHAIN_PATH" \
-            | grep "Apple Distribution" \
-            || true
+            "$RUNNER_TEMP/vibra-signing.keychain-db"
 
 
-      # ============================================================
-      # 12. INSTALLA PROVISIONING PROFILE
-      # ============================================================
+      # ==========================================================
+      # 12. INSTALL PROVISIONING PROFILE
+      # ==========================================================
 
       - name: Install provisioning profile
         env:
@@ -364,15 +310,15 @@ jobs:
             "$HOME/Library/MobileDevice/Provisioning Profiles/"
 
           echo ""
-          echo "=== PROFILE INSTALLATO ==="
+          echo "Profilo installato."
 
           ls -lh \
-            "$HOME/Library/MobileDevice/Provisioning Profiles"
+            "$HOME/Library/MobileDevice/Provisioning Profiles/"
 
 
-      # ============================================================
+      # ==========================================================
       # 13. VERIFICA PROVISIONING PROFILE
-      # ============================================================
+      # ==========================================================
 
       - name: Verify provisioning profile
         run: |
@@ -409,27 +355,26 @@ jobs:
             profile.plist
 
           echo ""
-          echo "=== APP ID ==="
+          echo "=== APPLICATION IDENTIFIER ==="
 
           /usr/libexec/PlistBuddy \
             -c "Print :Entitlements:application-identifier" \
             profile.plist
 
           echo ""
-          echo "=== TYPE ==="
+          echo "=== CERTIFICATI AUTORIZZATI ==="
 
           /usr/libexec/PlistBuddy \
-            -c "Print :ProvisionedDevices" \
+            -c "Print :DeveloperCertificates" \
             profile.plist \
-            2>/dev/null \
-            || echo "App Store profile: nessun device specifico."
+            || true
 
 
-      # ============================================================
-      # 14. CONFIGURA FIRMA APP
-      # ============================================================
+      # ==========================================================
+      # 14. CONFIGURAZIONE FIRMA TARGET VIBRA
+      # ==========================================================
 
-           - name: Configure app signing
+      - name: Configure app signing
         run: |
           echo "========================================"
           echo " CONFIGURAZIONE FIRMA TARGET VIBRA"
@@ -454,7 +399,7 @@ jobs:
           IDENTITY = "Apple Distribution"
 
           # --------------------------------------------------
-          # 1. TROVA IL PBXNATIVE TARGET "Vibra"
+          # 1. TROVA IL TARGET VIBRA
           # --------------------------------------------------
 
           target_match = re.search(
@@ -476,7 +421,7 @@ jobs:
           print("Configuration list:", config_list_uuid)
 
           # --------------------------------------------------
-          # 2. TROVA LA XCConfigurationList DEL TARGET VIBRA
+          # 2. TROVA LE CONFIGURAZIONI DEL TARGET
           # --------------------------------------------------
 
           config_list_match = re.search(
@@ -506,7 +451,7 @@ jobs:
           print("Configurazioni target trovate:", config_ids)
 
           # --------------------------------------------------
-          # 3. MODIFICA SOLO LE CONFIGURAZIONI DEL TARGET VIBRA
+          # 3. MODIFICA SOLO LE CONFIGURAZIONI DEL TARGET
           # --------------------------------------------------
 
           for config_uuid in config_ids:
@@ -526,7 +471,7 @@ jobs:
 
               settings = m.group(2)
 
-              # Rimuove eventuali vecchie impostazioni
+              # Rimuove vecchie impostazioni
               settings = re.sub(
                   r'\n\s*DEVELOPMENT_TEAM\s*=\s*[^;]+;',
                   '',
@@ -551,7 +496,7 @@ jobs:
                   settings
               )
 
-              # Inserisce le impostazioni SOLO nel target Vibra
+              # Inserisce firma manuale
               signing = f'''
           			CODE_SIGN_IDENTITY = "{IDENTITY}";
           			CODE_SIGN_STYLE = Manual;
@@ -580,6 +525,12 @@ jobs:
             -E "DEVELOPMENT_TEAM|CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|PROVISIONING_PROFILE_SPECIFIER" \
             "$PROJECT_FILE" \
             || true
+
+
+      # ==========================================================
+      # 15. CONFIGURAZIONE PODS
+      # ==========================================================
+
       - name: Configure Pods signing
         run: |
           echo "========================================"
@@ -634,15 +585,13 @@ jobs:
           PY
 
           else
-
             echo "Pods.xcodeproj non trovato."
-
           fi
 
 
-      # ============================================================
-      # 16. CREA ENTITLEMENTS
-      # ============================================================
+      # ==========================================================
+      # 16. CREAZIONE ENTITLEMENTS
+      # ==========================================================
 
       - name: Create Entitlements
         run: |
@@ -673,30 +622,25 @@ jobs:
           cat "Vibra/Entitlements/Entitlements.plist"
 
 
-      # ============================================================
-      # 17. MOSTRA WORKSPACE
-      # ============================================================
+      # ==========================================================
+      # 17. VERIFICA WORKSPACE
+      # ==========================================================
 
       - name: Show workspace
         run: |
           echo "========================================"
-          echo " WORKSPACE"
+          echo " VERIFICA WORKSPACE"
           echo "========================================"
 
-          ls -la Vibra.xcworkspace
-
-          echo ""
-          echo "=== CONTENUTO WORKSPACE ==="
-
-          find Vibra.xcworkspace \
-            -maxdepth 2 \
-            -type f \
+          find . \
+            -maxdepth 4 \
+            \( -name "*.xcworkspace" -o -name "*.xcodeproj" \) \
             -print
 
 
-      # ============================================================
+      # ==========================================================
       # 18. ARCHIVE
-      # ============================================================
+      # ==========================================================
 
       - name: Archive
         run: |
@@ -706,14 +650,42 @@ jobs:
           echo " AVVIO ARCHIVE VIBRA"
           echo "========================================"
 
+          echo ""
+          echo "=== FIRMA UTILIZZATA ==="
+
+          echo "Identity: Apple Distribution"
+          echo "Team: MA8PHU39TR"
+          echo "Profile: VibraAppStoreNew"
+
+          echo ""
+          echo "=== CONTROLLO IMPOSTAZIONI TARGET ==="
+
+          xcodebuild \
+            -workspace Vibra.xcworkspace \
+            -scheme Vibra \
+            -configuration Release \
+            -sdk iphoneos \
+            -showBuildSettings \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="MA8PHU39TR" \
+            | grep -E \
+              "TARGET_NAME|CODE_SIGN_IDENTITY|CODE_SIGN_STYLE|DEVELOPMENT_TEAM|PROVISIONING_PROFILE_SPECIFIER" \
+            || true
+
+          echo ""
+          echo "========================================"
+          echo " ESECUZIONE ARCHIVE"
+          echo "========================================"
+
           xcodebuild archive \
             -workspace Vibra.xcworkspace \
             -scheme Vibra \
             -configuration Release \
             -sdk iphoneos \
             -archivePath "$PWD/Vibra.xcarchive" \
-            CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
+            CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM="MA8PHU39TR" \
             | tee archive.log
 
@@ -741,9 +713,9 @@ jobs:
           echo "========================================"
 
 
-      # ============================================================
+      # ==========================================================
       # 19. CONTROLLO ARCHIVE
-      # ============================================================
+      # ==========================================================
 
       - name: Check archive
         run: |
@@ -757,22 +729,21 @@ jobs:
           fi
 
           echo ""
-          echo "=== ARCHIVE PRESENTE ==="
+          echo "Archive trovato."
 
           ls -lah Vibra.xcarchive
 
           echo ""
-          echo "=== APP ==="
+          echo "=== PRODUCTS ==="
 
-          find Vibra.xcarchive \
-            -name "*.app" \
+          find Vibra.xcarchive/Products \
             -maxdepth 4 \
             -print
 
 
-      # ============================================================
+      # ==========================================================
       # 20. EXPORT OPTIONS
-      # ============================================================
+      # ==========================================================
 
       - name: Create ExportOptions
         run: |
@@ -823,9 +794,9 @@ jobs:
           cat ExportOptions.plist
 
 
-      # ============================================================
+      # ==========================================================
       # 21. EXPORT IPA
-      # ============================================================
+      # ==========================================================
 
       - name: Export IPA
         run: |
@@ -835,13 +806,11 @@ jobs:
           echo " EXPORT IPA"
           echo "========================================"
 
-          mkdir -p export
-
           xcodebuild \
             -exportArchive \
             -archivePath "$PWD/Vibra.xcarchive" \
-            -exportPath "$PWD/export" \
             -exportOptionsPlist "$PWD/ExportOptions.plist" \
+            -exportPath "$PWD/export" \
             | tee export.log
 
           STATUS=${PIPESTATUS[0]}
@@ -852,9 +821,6 @@ jobs:
             echo "========================================"
             echo " EXPORT FALLITO"
             echo "========================================"
-
-            echo ""
-            echo "=== ULTIME 200 RIGHE LOG ==="
 
             tail -n 200 export.log || true
 
@@ -868,46 +834,61 @@ jobs:
           echo "========================================"
 
 
-      # ============================================================
+      # ==========================================================
       # 22. MOSTRA IPA
-      # ============================================================
+      # ==========================================================
 
       - name: Show IPA
         run: |
           echo "========================================"
-          echo " IPA GENERATO"
+          echo " IPA GENERATA"
           echo "========================================"
 
           find export \
             -maxdepth 2 \
             -type f \
+            -name "*.ipa" \
             -print
 
           echo ""
 
-          ls -lh export/*.ipa
+          ls -lah export || true
 
 
-      # ============================================================
+      # ==========================================================
       # 23. UPLOAD IPA
-      # ============================================================
+      # ==========================================================
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
+
         with:
           name: Vibra-iOS-IPA
-          path: export/*.ipa
+          path: |
+            export/*.ipa
+            Vibra.xcarchive
+            archive.log
+            export.log
+
+          if-no-files-found: error
 
 
-      # ============================================================
+      # ==========================================================
       # 24. UPLOAD LOG
-      # ============================================================
+      # ==========================================================
 
       - name: Upload build logs
         if: always()
+
         uses: actions/upload-artifact@v4
+
         with:
-          name: Vibra-iOS-Build-Logs
+          name: Vibra-build-logs
+
           path: |
             archive.log
             export.log
+            profile.plist
+            ExportOptions.plist
+
+          if-no-files-found: ignore
