@@ -429,16 +429,16 @@ jobs:
       # 14. CONFIGURA FIRMA APP
       # ============================================================
 
-      - name: Configure app signing
+           - name: Configure app signing
         run: |
           echo "========================================"
-          echo " CONFIGURAZIONE FIRMA APP"
+          echo " CONFIGURAZIONE FIRMA TARGET VIBRA"
           echo "========================================"
 
           PROJECT_FILE="Vibra.xcodeproj/project.pbxproj"
 
           if [ ! -f "$PROJECT_FILE" ]; then
-            echo "ERRORE: project.pbxproj principale non trovato."
+            echo "ERRORE: $PROJECT_FILE non trovato."
             exit 1
           fi
 
@@ -447,82 +447,139 @@ jobs:
           import re
 
           path = Path("Vibra.xcodeproj/project.pbxproj")
-
           text = path.read_text()
 
-          # TEAM APPLE
-          text = re.sub(
-              r'DEVELOPMENT_TEAM\s*=\s*[^;]+;',
-              'DEVELOPMENT_TEAM = MA8PHU39TR;',
-              text
+          TEAM = "MA8PHU39TR"
+          PROFILE = "VibraAppStoreNew"
+          IDENTITY = "Apple Distribution"
+
+          # --------------------------------------------------
+          # 1. TROVA IL PBXNATIVE TARGET "Vibra"
+          # --------------------------------------------------
+
+          target_match = re.search(
+              r'([A-F0-9]{24}) /\* Vibra \*/ = \{'
+              r'.*?buildConfigurationList = ([A-F0-9]{24}) /\* Build configuration list for PBXNativeTarget "Vibra" \*/;'
+              r'.*?name = Vibra;',
+              text,
+              re.S
           )
 
-          # FIRMA MANUALE
-          text = re.sub(
-              r'CODE_SIGN_STYLE\s*=\s*[^;]+;',
-              'CODE_SIGN_STYLE = Manual;',
-              text
+          if not target_match:
+              print("ERRORE: target PBXNativeTarget Vibra non trovato.")
+              raise SystemExit(1)
+
+          target_uuid = target_match.group(1)
+          config_list_uuid = target_match.group(2)
+
+          print("Target Vibra trovato:", target_uuid)
+          print("Configuration list:", config_list_uuid)
+
+          # --------------------------------------------------
+          # 2. TROVA LA XCConfigurationList DEL TARGET VIBRA
+          # --------------------------------------------------
+
+          config_list_match = re.search(
+              rf'{re.escape(config_list_uuid)} /\* Build configuration list for PBXNativeTarget "Vibra" \*/ = \{{'
+              r'.*?buildConfigurations = \('
+              r'(.*?)'
+              r'\);',
+              text,
+              re.S
           )
 
-          # DISTRIBUTION
-          text = re.sub(
-              r'CODE_SIGN_IDENTITY\s*=\s*"[^"]*";',
-              'CODE_SIGN_IDENTITY = "Apple Distribution";',
-              text
+          if not config_list_match:
+              print("ERRORE: XCConfigurationList del target Vibra non trovata.")
+              raise SystemExit(1)
+
+          config_ids_text = config_list_match.group(1)
+
+          config_ids = re.findall(
+              r'([A-F0-9]{24}) /\* (?:Debug|Release) \*/',
+              config_ids_text
           )
 
-          text = re.sub(
-              r'CODE_SIGN_IDENTITY\s*=\s*[^;]+;',
-              'CODE_SIGN_IDENTITY = "Apple Distribution";',
-              text
-          )
+          if not config_ids:
+              print("ERRORE: configurazioni Debug/Release del target Vibra non trovate.")
+              raise SystemExit(1)
 
-          # PROFILE
-          text = re.sub(
-              r'PROVISIONING_PROFILE_SPECIFIER\s*=\s*[^;]+;',
-              'PROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;',
-              text
-          )
+          print("Configurazioni target trovate:", config_ids)
 
-          # Se non esistono, li aggiungiamo
-          if 'DEVELOPMENT_TEAM = MA8PHU39TR;' not in text:
-              text = text.replace(
-                  'buildSettings = {',
-                  'buildSettings = {\n'
-                  '\t\t\t\tDEVELOPMENT_TEAM = MA8PHU39TR;'
+          # --------------------------------------------------
+          # 3. MODIFICA SOLO LE CONFIGURAZIONI DEL TARGET VIBRA
+          # --------------------------------------------------
+
+          for config_uuid in config_ids:
+
+              pattern = (
+                  rf'({re.escape(config_uuid)} /\* [^*]+ \*/ = \{{'
+                  rf'.*?buildSettings = \{{)'
+                  rf'(.*?)'
+                  rf'(\n\s*\}};)',
               )
 
-          if 'CODE_SIGN_IDENTITY = "Apple Distribution";' not in text:
-              text = text.replace(
-                  'buildSettings = {',
-                  'buildSettings = {\n'
-                  '\t\t\t\tCODE_SIGN_IDENTITY = "Apple Distribution";'
+              m = re.search(pattern[0], text, re.S)
+
+              if not m:
+                  print("ATTENZIONE: buildSettings non trovati per", config_uuid)
+                  continue
+
+              settings = m.group(2)
+
+              # Rimuove eventuali vecchie impostazioni
+              settings = re.sub(
+                  r'\n\s*DEVELOPMENT_TEAM\s*=\s*[^;]+;',
+                  '',
+                  settings
               )
 
-          if 'PROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;' not in text:
-              text = text.replace(
-                  'buildSettings = {',
-                  'buildSettings = {\n'
-                  '\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;'
+              settings = re.sub(
+                  r'\n\s*CODE_SIGN_STYLE\s*=\s*[^;]+;',
+                  '',
+                  settings
               )
+
+              settings = re.sub(
+                  r'\n\s*CODE_SIGN_IDENTITY(?:\[sdk=[^\]]+\])?\s*=\s*[^;]+;',
+                  '',
+                  settings
+              )
+
+              settings = re.sub(
+                  r'\n\s*PROVISIONING_PROFILE_SPECIFIER(?:\[sdk=[^\]]+\])?\s*=\s*[^;]+;',
+                  '',
+                  settings
+              )
+
+              # Inserisce le impostazioni SOLO nel target Vibra
+              signing = f'''
+          			CODE_SIGN_IDENTITY = "{IDENTITY}";
+          			CODE_SIGN_STYLE = Manual;
+          			DEVELOPMENT_TEAM = {TEAM};
+          			PROVISIONING_PROFILE_SPECIFIER = {PROFILE};'''
+
+              settings = settings.rstrip() + signing + "\n"
+
+              text = text[:m.start(2)] + settings + text[m.end(2):]
+
+              print("Firma configurata per:", config_uuid)
 
           path.write_text(text)
+
+          print("")
+          print("CONFIGURAZIONE TARGET VIBRA COMPLETATA.")
 
           PY
 
           echo ""
-          echo "=== CONFIGURAZIONE FIRMA ==="
+          echo "========================================"
+          echo " VERIFICA TARGET VIBRA"
+          echo "========================================"
 
           grep -n \
             -E "DEVELOPMENT_TEAM|CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|PROVISIONING_PROFILE_SPECIFIER" \
-            Vibra.xcodeproj/project.pbxproj \
+            "$PROJECT_FILE" \
             || true
-
-
-      # ============================================================
-      # 15. CONFIGURA PODS
-      # ============================================================
-
       - name: Configure Pods signing
         run: |
           echo "========================================"
