@@ -22,27 +22,108 @@ jobs:
 
       - name: Analyze project structure
         run: |
-          echo "=== STRUTTURA PROGETTO ==="
-          find . -maxdepth 3 -type f \
-            \( -name "*.xcodeproj" -o -name "*.xcworkspace" -o -name "Podfile" \) \
+          echo "========================================"
+          echo " STRUTTURA REPOSITORY"
+          echo "========================================"
+
+          echo ""
+          echo "=== FILE XCODE ==="
+
+          find . -maxdepth 2 -type f \
+            \( -name "project.pbxproj" \
+            -o -name "*.xcscheme" \
+            -o -name "contents.xcworkspacedata" \
+            -o -name "Podfile" \) \
             -print
+
+          echo ""
+          echo "=== ROOT ==="
+          ls -la
 
 
       - name: Recreate Xcode project structure
         run: |
-          echo "=== CONTROLLO PROGETTO ==="
+          set -e
 
-          if [ ! -d "Vibra.xcodeproj" ]; then
-            echo "ERRORE: Vibra.xcodeproj non trovato."
+          echo "========================================"
+          echo " RICOSTRUZIONE STRUTTURA XCODE"
+          echo "========================================"
+
+          if [ ! -f "project.pbxproj" ]; then
+            echo "ERRORE: project.pbxproj non trovato nella root."
             exit 1
           fi
 
-          if [ ! -f "Vibra.xcodeproj/project.pbxproj" ]; then
-            echo "ERRORE: project.pbxproj non trovato."
-            exit 1
+          echo "project.pbxproj trovato."
+
+          #
+          # CREAZIONE Vibra.xcodeproj
+          #
+          mkdir -p "Vibra.xcodeproj"
+
+          cp \
+            "project.pbxproj" \
+            "Vibra.xcodeproj/project.pbxproj"
+
+          echo ""
+          echo "Creato:"
+          echo "Vibra.xcodeproj/project.pbxproj"
+
+          #
+          # CREAZIONE Vibra.xcworkspace
+          #
+          mkdir -p "Vibra.xcworkspace"
+
+          if [ -f "contents.xcworkspacedata" ]; then
+
+            cp \
+              "contents.xcworkspacedata" \
+              "Vibra.xcworkspace/contents.xcworkspacedata"
+
+            echo "Workspace ricostruito."
+
+          else
+
+            cat > "Vibra.xcworkspace/contents.xcworkspacedata" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Workspace
+             version = "1.0">
+          </Workspace>
+          EOF
+
+            echo "Workspace creato."
+
           fi
 
-          echo "Vibra.xcodeproj trovato."
+          #
+          # CREAZIONE SCHEME
+          #
+          mkdir -p \
+            "Vibra.xcodeproj/xcshareddata/xcschemes"
+
+          if [ -f "Vibra.xcscheme" ]; then
+
+            cp \
+              "Vibra.xcscheme" \
+              "Vibra.xcodeproj/xcshareddata/xcschemes/Vibra.xcscheme"
+
+            echo "Scheme Vibra copiato."
+
+          else
+
+            echo "ATTENZIONE: Vibra.xcscheme non trovato."
+
+          fi
+
+          echo ""
+          echo "=== STRUTTURA CREATA ==="
+
+          find \
+            "Vibra.xcodeproj" \
+            "Vibra.xcworkspace" \
+            -maxdepth 5 \
+            -type f \
+            -print
 
 
       - name: Install CocoaPods
@@ -53,36 +134,51 @@ jobs:
 
       - name: Install Pods
         run: |
-          if [ -f "Podfile" ]; then
-            pod install --repo-update
-          else
-            echo "Podfile non trovato."
-          fi
+          set -e
 
+          echo "========================================"
+          echo " INSTALLAZIONE PODS"
+          echo "========================================"
 
-      - name: Find workspace
-        run: |
-          echo "=== WORKSPACE ==="
-
-          WORKSPACE=$(find . \
-            -maxdepth 3 \
-            -name "*.xcworkspace" \
-            -not -path "*/Pods/*" \
-            | head -n 1)
-
-          if [ -z "$WORKSPACE" ]; then
-            echo "ERRORE: nessun xcworkspace trovato."
+          if [ ! -f "Podfile" ]; then
+            echo "ERRORE: Podfile non trovato."
             exit 1
           fi
 
-          echo "Workspace trovato: $WORKSPACE"
+          pod install --repo-update
 
-          echo "WORKSPACE=$WORKSPACE" >> "$GITHUB_ENV"
+
+      - name: Verify workspace
+        run: |
+          echo "========================================"
+          echo " CONTROLLO WORKSPACE"
+          echo "========================================"
+
+          if [ ! -d "Vibra.xcworkspace" ]; then
+            echo "ERRORE: Vibra.xcworkspace non trovato."
+            exit 1
+          fi
+
+          if [ ! -f "Vibra.xcworkspace/contents.xcworkspacedata" ]; then
+            echo "ERRORE: contents.xcworkspacedata non trovato."
+            exit 1
+          fi
+
+          echo "Workspace OK."
+
+          echo ""
+          echo "=== WORKSPACE LIST ==="
+
+          xcodebuild \
+            -workspace Vibra.xcworkspace \
+            -list
 
 
       - name: Verify P12 secrets
         run: |
-          echo "=== CONTROLLO SECRET ==="
+          echo "========================================"
+          echo " CONTROLLO SECRET CERTIFICATO"
+          echo "========================================"
 
           if [ -z "${BUILD_CERTIFICATE_BASE64}" ]; then
             echo "ERRORE: BUILD_CERTIFICATE_BASE64 vuoto."
@@ -94,8 +190,9 @@ jobs:
             exit 1
           fi
 
-          echo "Secret certificato presente."
+          echo "Certificato presente."
           echo "Password P12 presente."
+
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -129,7 +226,9 @@ jobs:
 
       - name: Import signing certificate
         run: |
-          echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          echo "$BUILD_CERTIFICATE_BASE64" \
+            | base64 --decode \
+            > "$RUNNER_TEMP/certificate.p12"
 
           security import \
             "$RUNNER_TEMP/certificate.p12" \
@@ -144,7 +243,8 @@ jobs:
             -k "temporary-password" \
             "$KEYCHAIN_PATH"
 
-          echo "Certificato importato."
+          echo "Certificato importato correttamente."
+
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -152,7 +252,9 @@ jobs:
 
       - name: Check signing certificate
         run: |
-          echo "=== CERTIFICATI DISPONIBILI ==="
+          echo "========================================"
+          echo " CERTIFICATI DISPONIBILI"
+          echo "========================================"
 
           security find-identity \
             -v \
@@ -162,22 +264,31 @@ jobs:
 
       - name: Install provisioning profile
         run: |
-          echo "=== INSTALLAZIONE PROVISIONING PROFILE ==="
+          set -e
 
-          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "========================================"
+          echo " INSTALLAZIONE PROVISIONING PROFILE"
+          echo "========================================"
+
+          mkdir -p \
+            "$HOME/Library/MobileDevice/Provisioning Profiles"
 
           echo "$PROVISIONING_PROFILE_BASE64" \
             | base64 --decode \
             > "$RUNNER_TEMP/profile.mobileprovision"
 
           PROFILE_UUID=$(
-            security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" \
-            | plutil -extract UUID raw -
+            security cms \
+              -D \
+              -i "$RUNNER_TEMP/profile.mobileprovision" \
+              | plutil -extract UUID raw -
           )
 
           PROFILE_NAME=$(
-            security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" \
-            | plutil -extract Name raw -
+            security cms \
+              -D \
+              -i "$RUNNER_TEMP/profile.mobileprovision" \
+              | plutil -extract Name raw -
           )
 
           cp \
@@ -187,18 +298,23 @@ jobs:
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
           echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
 
+          echo ""
           echo "Profile:"
           echo "$PROFILE_NAME"
 
+          echo ""
           echo "UUID:"
           echo "$PROFILE_UUID"
+
         env:
           PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
 
 
       - name: Verify signing configuration
         run: |
-          echo "=== PROFILO INSTALLATO ==="
+          echo "========================================"
+          echo " CONTROLLO PROVISIONING PROFILE"
+          echo "========================================"
 
           security cms \
             -D \
@@ -228,41 +344,60 @@ jobs:
 
       - name: Configure app signing
         run: |
+          set -e
+
           PROJECT_FILE="Vibra.xcodeproj/project.pbxproj"
 
           if [ ! -f "$PROJECT_FILE" ]; then
-            echo "ERRORE: project.pbxproj principale non trovato."
+            echo "ERRORE: $PROJECT_FILE non trovato."
             exit 1
           fi
 
           python3 <<'PY'
           from pathlib import Path
 
-          path = Path(
-              "Vibra.xcodeproj/project.pbxproj"
-          )
+          path = Path("Vibra.xcodeproj/project.pbxproj")
 
           text = path.read_text()
 
+          #
+          # TEAM
+          #
           text = text.replace(
               'DEVELOPMENT_TEAM = "";',
               'DEVELOPMENT_TEAM = MA8PHU39TR;'
           )
 
+          #
+          # SIGNING STYLE
+          #
           text = text.replace(
               'CODE_SIGN_STYLE = Automatic;',
               'CODE_SIGN_STYLE = Manual;'
           )
 
+          #
+          # DISTRIBUTION CERTIFICATE
+          #
           text = text.replace(
               'CODE_SIGN_IDENTITY = "iOS Development";',
               'CODE_SIGN_IDENTITY = "Apple Distribution";'
           )
 
-          if (
-              'PROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;'
-              not in text
-          ):
+          text = text.replace(
+              'CODE_SIGN_IDENTITY = iOS Development;',
+              'CODE_SIGN_IDENTITY = "Apple Distribution";'
+          )
+
+          text = text.replace(
+              'CODE_SIGN_IDENTITY = "iPhone Developer";',
+              'CODE_SIGN_IDENTITY = "Apple Distribution";'
+          )
+
+          #
+          # PROVISIONING PROFILE
+          #
+          if 'PROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;' not in text:
 
               text = text.replace(
                   'DEVELOPMENT_TEAM = MA8PHU39TR;',
@@ -275,11 +410,13 @@ jobs:
           PY
 
           echo ""
-          echo "=== CONTROLLO FIRMA APP ==="
+          echo "========================================"
+          echo " CONFIGURAZIONE FIRMA TARGET VIBRA"
+          echo "========================================"
 
           grep -n \
             -E "DEVELOPMENT_TEAM|CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|PROVISIONING_PROFILE_SPECIFIER" \
-            Vibra.xcodeproj/project.pbxproj || true
+            "$PROJECT_FILE" || true
 
 
       - name: Configure Pods signing
@@ -324,7 +461,9 @@ jobs:
 
       - name: Create Entitlements
         run: |
-          echo "=== CREAZIONE ENTITLEMENTS ==="
+          echo "========================================"
+          echo " CREAZIONE ENTITLEMENTS"
+          echo "========================================"
 
           mkdir -p "Vibra/Entitlements"
 
@@ -340,20 +479,6 @@ jobs:
 
           echo "Entitlements creato."
 
-          cat "Vibra/Entitlements/Entitlements.plist"
-
-
-      - name: Show workspace
-        run: |
-          echo "=== WORKSPACE ==="
-          echo "$WORKSPACE"
-
-          echo "=== SCHEMES ==="
-
-          xcodebuild \
-            -workspace "$WORKSPACE" \
-            -list
-
 
       - name: Archive
         run: |
@@ -364,7 +489,7 @@ jobs:
           echo "========================================"
 
           xcodebuild archive \
-            -workspace "$WORKSPACE" \
+            -workspace Vibra.xcworkspace \
             -scheme Vibra \
             -configuration Release \
             -sdk iphoneos \
@@ -389,22 +514,20 @@ jobs:
 
       - name: Check archive
         run: |
-          echo "=== CONTROLLO ARCHIVE ==="
+          echo "========================================"
+          echo " CONTROLLO ARCHIVE"
+          echo "========================================"
 
           if [ ! -d "Vibra.xcarchive" ]; then
             echo "ERRORE: Vibra.xcarchive non trovato."
             exit 1
           fi
 
-          echo "Archive creato correttamente."
-
-          ls -la Vibra.xcarchive
+          echo "ARCHIVE CREATO CORRETTAMENTE."
 
 
       - name: Create ExportOptions
         run: |
-          echo "=== CREAZIONE EXPORTOPTIONS ==="
-
           cat > ExportOptions.plist <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -442,7 +565,7 @@ jobs:
           </plist>
           EOF
 
-          cat ExportOptions.plist
+          echo "ExportOptions creato."
 
 
       - name: Export IPA
@@ -477,7 +600,9 @@ jobs:
 
       - name: Show IPA
         run: |
-          echo "=== IPA GENERATO ==="
+          echo "========================================"
+          echo " IPA GENERATO"
+          echo "========================================"
 
           find export \
             -maxdepth 2 \
