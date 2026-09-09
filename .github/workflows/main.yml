@@ -1,65 +1,792 @@
-name: Vibra iOS - Check Distribution
+name: Vibra iOS - Build IPA
 
 on:
   workflow_dispatch:
 
 jobs:
-  check:
+  build:
     runs-on: macos-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Check Xcode
+        run: |
+          echo "=== XCODE ==="
+          xcodebuild -version
+
+          echo ""
+          echo "=== iOS SDK ==="
+          xcodebuild -showsdks | grep -i iphoneos
+
+      - name: Analyze project structure
+        run: |
+          echo "========================================"
+          echo " PROJECT STRUCTURE PRIMA DELLA PREPARAZIONE"
+          echo "========================================"
+
+          echo ""
+          echo "=== FILES ROOT ==="
+          ls -la
+
+          echo ""
+          echo "=== XCODEPROJ ==="
+          find . -name "*.xcodeproj" -print
+
+          echo ""
+          echo "=== WORKSPACE ==="
+          find . -name "*.xcworkspace" -print
+
+          echo ""
+          echo "=== PODFILE ==="
+          find . -name "Podfile" -print
+
+          echo ""
+          echo "=== PROJECT.PBXPROJ ==="
+          find . -name "project.pbxproj" -print
+
+      - name: Recreate Xcode project structure
+        run: |
+          echo "========================================"
+          echo " RICREAZIONE VIBRA.XCODEPROJ"
+          echo "========================================"
+
+          if [ ! -f "project.pbxproj" ]; then
+            echo "ERRORE: project.pbxproj non trovato nella root."
+            exit 1
+          fi
+
+          mkdir -p Vibra.xcodeproj
+
+          cp project.pbxproj \
+            Vibra.xcodeproj/project.pbxproj
+
+          echo ""
+          echo "=== CONTROLLO ==="
+          ls -la Vibra.xcodeproj
+
+          if [ ! -f "Vibra.xcodeproj/project.pbxproj" ]; then
+            echo "ERRORE: Vibra.xcodeproj non creato correttamente."
+            exit 1
+          fi
+
+          echo ""
+          echo "OK: Vibra.xcodeproj ricreato."
 
       - name: Install CocoaPods
         run: |
           sudo gem install cocoapods
           pod --version
 
-      - name: Check Xcode
-        run: |
-          echo "=== XCODE ==="
-          xcodebuild -version
-          echo ""
-          echo "=== IOS SDK ==="
-          xcodebuild -showsdks | grep -i iphoneos
-
-      - name: Recreate Xcode project structure
-        run: |
-          echo "=== CREAZIONE PROGETTO ==="
-          mkdir -p Vibra.xcodeproj
-          cp project.pbxproj Vibra.xcodeproj/project.pbxproj
-
       - name: Install Pods
         run: |
+          echo "========================================"
+          echo " CERCA PODFILE E INSTALLA PODS"
+          echo "========================================"
+
+          PODFILE=$(find . -name "Podfile" | head -n 1)
+
+          if [ -z "$PODFILE" ]; then
+            echo "ERRORE: Podfile non trovato."
+            exit 1
+          fi
+
+          echo ""
+          echo "Podfile trovato:"
+          echo "$PODFILE"
+
+          POD_DIR=$(dirname "$PODFILE")
+
+          echo ""
+          echo "Cartella Podfile:"
+          echo "$POD_DIR"
+
+          cd "$POD_DIR"
+
+          echo ""
+          echo "=== CONTENUTO CARTELLA ==="
+          ls -la
+
+          echo ""
+          echo "=== XCODE PROJECT ==="
+          find . -maxdepth 2 -name "*.xcodeproj" -print
+
+          echo ""
           echo "=== POD INSTALL ==="
-          pod install
 
-      - name: Check Distribution Settings
+          pod install --repo-update
+
+      - name: Find workspace
         run: |
+          echo "========================================"
+          echo " CERCA WORKSPACE"
+          echo "========================================"
+
+          WORKSPACE=$(find . \
+            -name "*.xcworkspace" \
+            | grep -v Pods \
+            | head -n 1)
+
+          if [ -z "$WORKSPACE" ]; then
+            echo "ERRORE: workspace non trovato."
+            exit 1
+          fi
+
+          echo ""
+          echo "Workspace trovato:"
+          echo "$WORKSPACE"
+
+      - name: Verify P12 secrets
+        env:
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+        run: |
+          echo "========================================"
+          echo " VERIFICA SECRET P12"
+          echo "========================================"
+
+          echo ""
+          echo "=== SHA-256 PASSWORD RICEVUTA DA GITHUB ==="
+
+          printf '%s' "$P12_PASSWORD" \
+            | shasum -a 256
+
+          echo ""
+          echo "=== RICOSTRUZIONE P12 DAL SECRET ==="
+
+          echo "$BUILD_CERTIFICATE_BASE64" \
+            | base64 --decode \
+            > test-github.p12
+
+          echo ""
+          echo "=== SHA-256 P12 RICEVUTO DA GITHUB ==="
+
+          shasum -a 256 test-github.p12
+
+          echo ""
+          echo "=== DIMENSIONE P12 ==="
+
+          ls -lh test-github.p12
+
+      - name: Create signing keychain
+        env:
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          security create-keychain \
+            -p "$KEYCHAIN_PASSWORD" \
+            build.keychain
+
+          security set-keychain-settings \
+            -lut 21600 \
+            build.keychain
+
+          security unlock-keychain \
+            -p "$KEYCHAIN_PASSWORD" \
+            build.keychain
+
+          security list-keychains \
+            -d user \
+            -s build.keychain login.keychain-db
+
+          security default-keychain \
+            -s build.keychain
+
+      - name: Import signing certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$BUILD_CERTIFICATE_BASE64" \
+            | base64 --decode \
+            > distribution.p12
+
+          echo ""
+          echo "=== IMPORT CERTIFICATO ==="
+
+          security import distribution.p12 \
+            -k build.keychain \
+            -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            build.keychain
+
+          echo ""
+          echo "=== CERTIFICATI PRESENTI ==="
+
+          security find-identity \
+            -v \
+            -p codesigning \
+            build.keychain
+
+      - name: Check signing certificate
+        run: |
+          echo "========================================"
+          echo " CERTIFICATO APPLE DISTRIBUTION"
+          echo "========================================"
+
+          security find-certificate \
+            -a \
+            -Z \
+            -c "Apple Distribution" \
+            build.keychain
+
+      - name: Install provisioning profile
+        env:
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+        run: |
+          mkdir -p \
+            "$HOME/Library/MobileDevice/Provisioning Profiles"
+
+          echo "$BUILD_PROVISION_PROFILE_BASE64" \
+            | base64 --decode \
+            > "$HOME/Library/MobileDevice/Provisioning Profiles/VibraAppStoreNew.mobileprovision"
+
+          security cms \
+            -D \
+            -i "$HOME/Library/MobileDevice/Provisioning Profiles/VibraAppStoreNew.mobileprovision" \
+            > profile.plist
+
+          echo "=== PROFILO ==="
+
+          /usr/libexec/PlistBuddy \
+            -c "Print :Name" \
+            profile.plist
+
+          echo ""
+
+          echo "=== UUID ==="
+
+          /usr/libexec/PlistBuddy \
+            -c "Print :UUID" \
+            profile.plist
+
+          echo ""
+
           echo "=== TEAM ID ==="
-          grep -n "DEVELOPMENT_TEAM" project.pbxproj || true
+
+          /usr/libexec/PlistBuddy \
+            -c "Print :TeamIdentifier:0" \
+            profile.plist
 
           echo ""
-          echo "=== CODE SIGN IDENTITY ==="
-          grep -n "CODE_SIGN_IDENTITY" project.pbxproj || true
+
+          echo "=== APP ID ==="
+
+          /usr/libexec/PlistBuddy \
+            -c "Print :Entitlements:application-identifier" \
+            profile.plist
+
+      - name: Verify signing configuration
+        run: |
+          python3 <<'PY'
+          import subprocess
+          import plistlib
+          import re
+          import sys
+
+          print("========================================")
+          print(" VERIFICA SIGNING")
+          print("========================================")
+
+          profile_path = (
+              "/Users/runner/Library/MobileDevice/"
+              "Provisioning Profiles/VibraAppStoreNew.mobileprovision"
+          )
+
+          decoded = subprocess.check_output([
+              "security",
+              "cms",
+              "-D",
+              "-i",
+              profile_path
+          ])
+
+          profile = plistlib.loads(decoded)
+
+          profile_name = profile.get("Name", "")
+          profile_uuid = profile.get("UUID", "")
+          team_identifier = profile.get("TeamIdentifier", [""])[0]
+
+          entitlements = profile.get("Entitlements", {})
+
+          application_identifier = entitlements.get(
+              "application-identifier",
+              ""
+          )
+
+          print("")
+          print("PROFILO:")
+          print("Name:", profile_name)
+          print("UUID:", profile_uuid)
+          print("Team:", team_identifier)
+          print("App ID:", application_identifier)
+
+          if profile_name != "VibraAppStoreNew":
+              print("ERRORE: profilo errato.")
+              sys.exit(1)
+
+          if profile_uuid != "f3184078-4f44-4244-9db2-1290b7c2b0df":
+              print("ERRORE: UUID provisioning profile errato.")
+              sys.exit(1)
+
+          if team_identifier != "MA8PHU39TR":
+              print("ERRORE: Team ID errato.")
+              sys.exit(1)
+
+          if application_identifier != "MA8PHU39TR.com.vibraalienmatch":
+              print("ERRORE: App ID errato.")
+              sys.exit(1)
+
+          certificates = profile.get("DeveloperCertificates", [])
+
+          if not certificates:
+              print("ERRORE: nessun certificato nel provisioning profile.")
+              sys.exit(1)
+
+          profile_fingerprints = []
+
+          for cert in certificates:
+
+              temp_cert = "/tmp/profile_cert.cer"
+
+              with open(temp_cert, "wb") as f:
+                  f.write(cert)
+
+              output = subprocess.check_output([
+                  "openssl",
+                  "x509",
+                  "-inform",
+                  "DER",
+                  "-in",
+                  temp_cert,
+                  "-fingerprint",
+                  "-sha1",
+                  "-noout"
+              ]).decode()
+
+              match = re.search(
+                  r"=([0-9A-Fa-f:]+)",
+                  output
+              )
+
+              if match:
+
+                  fingerprint = (
+                      match.group(1)
+                      .replace(":", "")
+                      .upper()
+                  )
+
+                  profile_fingerprints.append(
+                      fingerprint
+                  )
+
+          print("")
+          print("SHA-1 certificati autorizzati dal profilo:")
+
+          for fingerprint in profile_fingerprints:
+              print(fingerprint)
+
+          output = subprocess.check_output([
+              "security",
+              "find-certificate",
+              "-a",
+              "-Z",
+              "-c",
+              "Apple Distribution",
+              "build.keychain"
+          ]).decode()
+
+          certificate_fingerprints = []
+
+          for line in output.splitlines():
+
+              match = re.search(
+                  r"SHA-1\s+hash:\s*([0-9A-Fa-f:]+)",
+                  line,
+                  re.IGNORECASE
+              )
+
+              if match:
+
+                  value = (
+                      match.group(1)
+                      .replace(":", "")
+                      .upper()
+                  )
+
+                  if len(value) == 40:
+                      certificate_fingerprints.append(
+                          value
+                      )
+
+          print("")
+          print("SHA-1 certificati presenti nella keychain:")
+
+          for fingerprint in certificate_fingerprints:
+              print(fingerprint)
+
+          if not certificate_fingerprints:
+              print("")
+              print("ERRORE: impossibile trovare SHA-1 del certificato.")
+              sys.exit(1)
+
+          match_found = False
+
+          for profile_cert in profile_fingerprints:
+
+              if profile_cert in certificate_fingerprints:
+                  match_found = True
+
+          print("")
+
+          if not match_found:
+
+              print("========================================")
+              print(" ERRORE: CERTIFICATO NON COMPATIBILE")
+              print("========================================")
+
+              sys.exit(1)
+
+          print("========================================")
+          print(" SIGNING PERFETTAMENTE COMPATIBILE")
+          print("========================================")
+
+          PY
+
+      - name: Configure app signing
+        run: |
+          PROJECT_FILE="Vibra.xcodeproj/project.pbxproj"
+
+          if [ ! -f "$PROJECT_FILE" ]; then
+            echo "ERRORE: project.pbxproj principale non trovato."
+            exit 1
+          fi
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path(
+              "Vibra.xcodeproj/project.pbxproj"
+          )
+
+          text = path.read_text()
+
+          # TEAM APPLE
+          text = text.replace(
+              'DEVELOPMENT_TEAM = "";',
+              'DEVELOPMENT_TEAM = MA8PHU39TR;'
+          )
+
+          text = text.replace(
+              'DEVELOPMENT_TEAM = "";',
+              'DEVELOPMENT_TEAM = MA8PHU39TR;'
+          )
+
+          # FIRMA MANUALE
+          text = text.replace(
+              'CODE_SIGN_STYLE = Automatic;',
+              'CODE_SIGN_STYLE = Manual;'
+          )
+
+          # QUALSIASI IDENTITA DI SVILUPPO VIENE SOSTITUITA
+          # CON APPLE DISTRIBUTION
+          text = re.sub(
+              r'CODE_SIGN_IDENTITY\s*=\s*"[^"]*";',
+              'CODE_SIGN_IDENTITY = "Apple Distribution";',
+              text
+          )
+
+          text = re.sub(
+              r'CODE_SIGN_IDENTITY\s*=\s*[^;]+;',
+              'CODE_SIGN_IDENTITY = "Apple Distribution";',
+              text
+          )
+
+          # Se CODE_SIGN_IDENTITY non esiste affatto,
+          # lo aggiungiamo accanto a DEVELOPMENT_TEAM.
+          if 'CODE_SIGN_IDENTITY = "Apple Distribution";' not in text:
+              text = text.replace(
+                  'DEVELOPMENT_TEAM = MA8PHU39TR;',
+                  'DEVELOPMENT_TEAM = MA8PHU39TR;\n'
+                  '\t\t\t\tCODE_SIGN_IDENTITY = "Apple Distribution";'
+              )
+
+          # PROFILO APP STORE
+          if (
+              'PROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;'
+              not in text
+          ):
+              text = text.replace(
+                  'DEVELOPMENT_TEAM = MA8PHU39TR;',
+                  'DEVELOPMENT_TEAM = MA8PHU39TR;\n'
+                  '\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;'
+              )
+
+          path.write_text(text)
+
+          PY
 
           echo ""
-          echo "=== CODE SIGN STYLE ==="
-          grep -n "CODE_SIGN_STYLE" project.pbxproj || true
+          echo "=== CONTROLLO FIRMA APP ==="
+
+          grep -n \
+            -E "DEVELOPMENT_TEAM|CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|PROVISIONING_PROFILE_SPECIFIER" \
+            Vibra.xcodeproj/project.pbxproj || true
+
+      - name: Configure Pods signing
+        run: |
+          POD_PROJECT=$(find . \
+            -path "*Pods.xcodeproj/project.pbxproj" \
+            | head -n 1)
+
+          if [ -n "$POD_PROJECT" ]; then
+
+            echo "Pods project:"
+            echo "$POD_PROJECT"
+
+            python3 - "$POD_PROJECT" <<'PY'
+          import sys
+          from pathlib import Path
+          import re
+
+          path = Path(sys.argv[1])
+
+          text = path.read_text()
+
+          # I Pods non devono usare il certificato App Store
+          # dell'app principale.
+          text = re.sub(
+              r'CODE_SIGN_IDENTITY\s*=\s*"[^"]*";',
+              'CODE_SIGN_IDENTITY = "";',
+              text
+          )
+
+          text = re.sub(
+              r'CODE_SIGN_IDENTITY\s*=\s*[^;]+;',
+              'CODE_SIGN_IDENTITY = "";',
+              text
+          )
+
+          text = text.replace(
+              'CODE_SIGN_STYLE = Manual;',
+              'CODE_SIGN_STYLE = Automatic;'
+          )
+
+          text = text.replace(
+              'PROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;',
+              'PROVISIONING_PROFILE_SPECIFIER = "";'
+          )
+
+          path.write_text(text)
+
+          print("Pods signing configurato.")
+
+          PY
+
+          else
+            echo "Pods.xcodeproj non trovato."
+          fi
+
+      - name: Create Entitlements
+        run: |
+          echo "========================================"
+          echo " CREAZIONE ENTITLEMENTS"
+          echo "========================================"
+
+          mkdir -p "Vibra/Entitlements"
+
+          cat > "Vibra/Entitlements/Entitlements.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+          "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+          </dict>
+          </plist>
+          PLIST
 
           echo ""
-          echo "=== PROVISIONING PROFILE ==="
-          grep -n "PROVISIONING_PROFILE" project.pbxproj || true
+          echo "=== ENTITLEMENTS CREATI ==="
+
+          ls -la "Vibra/Entitlements/Entitlements.plist"
 
           echo ""
-          echo "=== PRODUCT BUNDLE ID ==="
-          grep -n "PRODUCT_BUNDLE_IDENTIFIER" project.pbxproj || true
+          echo "=== CONTENUTO ==="
+
+          cat "Vibra/Entitlements/Entitlements.plist"
+
+      - name: Show workspace
+        run: |
+          echo "========================================"
+          echo " WORKSPACE"
+          echo "========================================"
+
+          find . \
+            -maxdepth 3 \
+            -name "*.xcworkspace" \
+            -print
 
           echo ""
-          echo "=== DEVELOPMENT TEAM FROM XCODE ==="
-          xcodebuild \
+
+          find . \
+            -maxdepth 3 \
+            -name "*.xcodeproj" \
+            -print
+
+      - name: Archive
+        run: |
+          set -o pipefail
+
+          echo "========================================"
+          echo " AVVIO ARCHIVE VIBRA"
+          echo "========================================"
+
+          xcodebuild archive \
             -workspace Vibra.xcworkspace \
             -scheme Vibra \
+            -configuration Release \
             -sdk iphoneos \
-            -showBuildSettings | grep -E "DEVELOPMENT_TEAM|CODE_SIGN|PRODUCT_BUNDLE_IDENTIFIER|PROVISIONING"
+            -archivePath "$PWD/Vibra.xcarchive" \
+            | tee archive.log
+
+          STATUS=${PIPESTATUS[0]}
+
+          if [ "$STATUS" -ne 0 ]; then
+
+            echo ""
+            echo "========================================"
+            echo " ARCHIVE FALLITO"
+            echo "========================================"
+
+            tail -n 150 archive.log || true
+
+            exit "$STATUS"
+
+          fi
+
+      - name: Check archive
+        run: |
+          echo "=== CONTROLLO ARCHIVE ==="
+
+          if [ ! -d "Vibra.xcarchive" ]; then
+
+            echo "ERRORE: archive non creato."
+
+            tail -n 150 archive.log || true
+
+            exit 1
+
+          fi
+
+          echo "Archive creato correttamente."
+
+          ls -la Vibra.xcarchive
+
+      - name: Create ExportOptions
+        run: |
+          cat > ExportOptions.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+          "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+
+              <key>method</key>
+              <string>app-store</string>
+
+              <key>signingStyle</key>
+              <string>manual</string>
+
+              <key>teamID</key>
+              <string>MA8PHU39TR</string>
+
+              <key>provisioningProfiles</key>
+              <dict>
+
+                  <key>com.vibraalienmatch</key>
+                  <string>VibraAppStoreNew</string>
+
+              </dict>
+
+              <key>destination</key>
+              <string>export</string>
+
+              <key>stripSwiftSymbols</key>
+              <true/>
+
+              <key>compileBitcode</key>
+              <false/>
+
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Export IPA
+        run: |
+          set -o pipefail
+
+          echo "========================================"
+          echo " ESPORTAZIONE IPA"
+          echo "========================================"
+
+          mkdir -p export
+
+          xcodebuild -exportArchive \
+            -archivePath "$PWD/Vibra.xcarchive" \
+            -exportPath "$PWD/export" \
+            -exportOptionsPlist "$PWD/ExportOptions.plist" \
+            | tee export.log
+
+          STATUS=${PIPESTATUS[0]}
+
+          if [ "$STATUS" -ne 0 ]; then
+
+            echo ""
+            echo "========================================"
+            echo " EXPORT FALLITO"
+            echo "========================================"
+
+            tail -n 150 export.log || true
+
+            exit "$STATUS"
+
+          fi
+
+      - name: Show IPA
+        run: |
+          echo "========================================"
+          echo " RISULTATO"
+          echo "========================================"
+
+          find export \
+            -maxdepth 2 \
+            -type f \
+            -print
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vibra-iOS-IPA
+          path: export/*.ipa
+          if-no-files-found: error
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vibra-iOS-Build-Logs
+          path: |
+            archive.log
+            export.log
+            ExportOptions.plist
+          if-no-files-found: ignore
