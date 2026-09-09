@@ -85,11 +85,11 @@ jobs:
           else
 
             cat > "Vibra.xcworkspace/contents.xcworkspacedata" <<'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <Workspace
-             version = "1.0">
-          </Workspace>
-          EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace
+   version = "1.0">
+</Workspace>
+EOF
 
             echo "Workspace creato."
 
@@ -265,6 +265,7 @@ jobs:
       - name: Install provisioning profile
         run: |
           set -e
+          set -o pipefail
 
           echo "========================================"
           echo " INSTALLAZIONE PROVISIONING PROFILE"
@@ -274,8 +275,12 @@ jobs:
             "$HOME/Library/MobileDevice/Provisioning Profiles"
 
           echo "$PROVISIONING_PROFILE_BASE64" \
-            | base64 --decode \
+            | base64 -D \
             > "$RUNNER_TEMP/profile.mobileprovision"
+
+          echo ""
+          echo "Dimensione provisioning profile:"
+          wc -c "$RUNNER_TEMP/profile.mobileprovision"
 
           PROFILE_UUID=$(
             security cms \
@@ -468,14 +473,14 @@ jobs:
           mkdir -p "Vibra/Entitlements"
 
           cat > "Vibra/Entitlements/Entitlements.plist" <<'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-          "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-          </dict>
-          </plist>
-          EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+</dict>
+</plist>
+EOF
 
           echo "Entitlements creato."
 
@@ -529,41 +534,41 @@ jobs:
       - name: Create ExportOptions
         run: |
           cat > ExportOptions.plist <<'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-          "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN
+"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
 
-              <key>method</key>
-              <string>app-store</string>
+    <key>method</key>
+    <string>app-store</string>
 
-              <key>signingStyle</key>
-              <string>manual</string>
+    <key>signingStyle</key>
+    <string>manual</string>
 
-              <key>teamID</key>
-              <string>MA8PHU39TR</string>
+    <key>teamID</key>
+    <string>MA8PHU39TR</string>
 
-              <key>provisioningProfiles</key>
-              <dict>
+    <key>provisioningProfiles</key>
+    <dict>
 
-                  <key>com.vibraalienmatch</key>
-                  <string>VibraAppStoreNew</string>
+        <key>com.vibraalienmatch</key>
+        <string>VibraAppStoreNew</string>
 
-              </dict>
+    </dict>
 
-              <key>destination</key>
-              <string>export</string>
+    <key>destination</key>
+    <string>export</string>
 
-              <key>stripSwiftSymbols</key>
-              <true/>
+    <key>stripSwiftSymbols</key>
+    <true/>
 
-              <key>compileBitcode</key>
-              <false/>
+    <key>compileBitcode</key>
+    <false/>
 
-          </dict>
-          </plist>
-          EOF
+</dict>
+</plist>
+EOF
 
           echo "ExportOptions creato."
 
