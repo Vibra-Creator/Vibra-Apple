@@ -9,16 +9,9 @@ jobs:
 
     steps:
 
-      # ============================================================
-      # 1. CHECKOUT
-      # ============================================================
       - name: Checkout
         uses: actions/checkout@v4
 
-
-      # ============================================================
-      # 2. CHECK XCODE
-      # ============================================================
       - name: Check Xcode
         run: |
           echo "=== XCODE ==="
@@ -28,10 +21,6 @@ jobs:
           echo "=== iOS SDK ==="
           xcodebuild -showsdks | grep -i iphoneos
 
-
-      # ============================================================
-      # 3. ANALYZE PROJECT STRUCTURE
-      # ============================================================
       - name: Analyze project structure
         run: |
           echo "========================================"
@@ -58,10 +47,6 @@ jobs:
           echo "=== PROJECT.PBXPROJ ==="
           find . -name "project.pbxproj" -print
 
-
-      # ============================================================
-      # 4. RECREATE XCODE PROJECT STRUCTURE
-      # ============================================================
       - name: Recreate Xcode project structure
         run: |
           echo "========================================"
@@ -90,19 +75,11 @@ jobs:
           echo ""
           echo "OK: Vibra.xcodeproj ricreato."
 
-
-      # ============================================================
-      # 5. INSTALL COCOAPODS
-      # ============================================================
       - name: Install CocoaPods
         run: |
           sudo gem install cocoapods
           pod --version
 
-
-      # ============================================================
-      # 6. INSTALL PODS
-      # ============================================================
       - name: Install Pods
         run: |
           echo "========================================"
@@ -141,10 +118,6 @@ jobs:
 
           pod install --repo-update
 
-
-      # ============================================================
-      # 7. FIND WORKSPACE
-      # ============================================================
       - name: Find workspace
         run: |
           echo "========================================"
@@ -165,10 +138,47 @@ jobs:
           echo "Workspace trovato:"
           echo "$WORKSPACE"
 
+      # ============================================================
+      # CONTROLLO AGGIUNTO:
+      # verifica che GitHub stia ricevendo ESATTAMENTE
+      # il P12 e la password corretti.
+      #
+      # NON stampa mai la password.
+      # Stampa solo SHA-256.
+      # ============================================================
 
-      # ============================================================
-      # 8. CREATE KEYCHAIN
-      # ============================================================
+      - name: Verify P12 secrets
+        env:
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+        run: |
+          echo "========================================"
+          echo " VERIFICA SECRET P12"
+          echo "========================================"
+
+          echo ""
+          echo "=== SHA-256 PASSWORD RICEVUTA DA GITHUB ==="
+
+          printf '%s' "$P12_PASSWORD" \
+            | shasum -a 256
+
+          echo ""
+          echo "=== RICOSTRUZIONE P12 DAL SECRET ==="
+
+          echo "$BUILD_CERTIFICATE_BASE64" \
+            | base64 --decode \
+            > test-github.p12
+
+          echo ""
+          echo "=== SHA-256 P12 RICEVUTO DA GITHUB ==="
+
+          shasum -a 256 test-github.p12
+
+          echo ""
+          echo "=== DIMENSIONE P12 ==="
+
+          ls -lh test-github.p12
+
       - name: Create signing keychain
         env:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
@@ -192,10 +202,6 @@ jobs:
           security default-keychain \
             -s build.keychain
 
-
-      # ============================================================
-      # 9. IMPORT SIGNING CERTIFICATE
-      # ============================================================
       - name: Import signing certificate
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
@@ -205,6 +211,9 @@ jobs:
           echo "$BUILD_CERTIFICATE_BASE64" \
             | base64 --decode \
             > distribution.p12
+
+          echo ""
+          echo "=== IMPORT CERTIFICATO ==="
 
           security import distribution.p12 \
             -k build.keychain \
@@ -226,10 +235,6 @@ jobs:
             -p codesigning \
             build.keychain
 
-
-      # ============================================================
-      # 10. CHECK CERTIFICATE
-      # ============================================================
       - name: Check signing certificate
         run: |
           echo "========================================"
@@ -242,10 +247,6 @@ jobs:
             -c "Apple Distribution" \
             build.keychain
 
-
-      # ============================================================
-      # 11. INSTALL PROVISIONING PROFILE
-      # ============================================================
       - name: Install provisioning profile
         env:
           BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
@@ -292,10 +293,6 @@ jobs:
             -c "Print :Entitlements:application-identifier" \
             profile.plist
 
-
-      # ============================================================
-      # 12. VERIFY SIGNING CONFIGURATION
-      # ============================================================
       - name: Verify signing configuration
         run: |
           python3 <<'PY'
@@ -328,6 +325,7 @@ jobs:
           team_identifier = profile.get("TeamIdentifier", [""])[0]
 
           entitlements = profile.get("Entitlements", {})
+
           application_identifier = entitlements.get(
               "application-identifier",
               ""
@@ -389,13 +387,16 @@ jobs:
               )
 
               if match:
+
                   fingerprint = (
                       match.group(1)
                       .replace(":", "")
                       .upper()
                   )
 
-                  profile_fingerprints.append(fingerprint)
+                  profile_fingerprints.append(
+                      fingerprint
+                  )
 
           print("")
           print("SHA-1 certificati autorizzati dal profilo:")
@@ -432,7 +433,9 @@ jobs:
                   )
 
                   if len(value) == 40:
-                      certificate_fingerprints.append(value)
+                      certificate_fingerprints.append(
+                          value
+                      )
 
           print("")
           print("SHA-1 certificati presenti nella keychain:")
@@ -448,15 +451,18 @@ jobs:
           match_found = False
 
           for profile_cert in profile_fingerprints:
+
               if profile_cert in certificate_fingerprints:
                   match_found = True
 
           print("")
 
           if not match_found:
+
               print("========================================")
               print(" ERRORE: CERTIFICATO NON COMPATIBILE")
               print("========================================")
+
               sys.exit(1)
 
           print("========================================")
@@ -465,10 +471,6 @@ jobs:
 
           PY
 
-
-      # ============================================================
-      # 13. CONFIGURE APP SIGNING
-      # ============================================================
       - name: Configure app signing
         run: |
           PROJECT_FILE="Vibra.xcodeproj/project.pbxproj"
@@ -481,7 +483,10 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
 
-          path = Path("Vibra.xcodeproj/project.pbxproj")
+          path = Path(
+              "Vibra.xcodeproj/project.pbxproj"
+          )
+
           text = path.read_text()
 
           text = text.replace(
@@ -494,13 +499,19 @@ jobs:
               'CODE_SIGN_STYLE = Manual;'
           )
 
-          if 'PROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;' not in text:
+          if (
+              'PROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;'
+              not in text
+          ):
+
               text = text.replace(
                   'DEVELOPMENT_TEAM = MA8PHU39TR;',
-                  'DEVELOPMENT_TEAM = MA8PHU39TR;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;',
+                  'DEVELOPMENT_TEAM = MA8PHU39TR;\n'
+                  '\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = VibraAppStoreNew;'
               )
 
           path.write_text(text)
+
           PY
 
           echo ""
@@ -510,10 +521,6 @@ jobs:
             -E "DEVELOPMENT_TEAM|CODE_SIGN_STYLE|PROVISIONING_PROFILE_SPECIFIER" \
             Vibra.xcodeproj/project.pbxproj || true
 
-
-      # ============================================================
-      # 14. CONFIGURE PODS SIGNING
-      # ============================================================
       - name: Configure Pods signing
         run: |
           POD_PROJECT=$(find . \
@@ -530,6 +537,7 @@ jobs:
           from pathlib import Path
 
           path = Path(sys.argv[1])
+
           text = path.read_text()
 
           text = text.replace(
@@ -545,16 +553,13 @@ jobs:
           path.write_text(text)
 
           print("Pods signing configurato.")
+
           PY
 
           else
             echo "Pods.xcodeproj non trovato."
           fi
 
-
-      # ============================================================
-      # 15. SHOW WORKSPACE
-      # ============================================================
       - name: Show workspace
         run: |
           echo "========================================"
@@ -573,10 +578,6 @@ jobs:
             -name "*.xcodeproj" \
             -print
 
-
-      # ============================================================
-      # 16. ARCHIVE
-      # ============================================================
       - name: Archive
         run: |
           set -o pipefail
@@ -596,37 +597,36 @@ jobs:
           STATUS=${PIPESTATUS[0]}
 
           if [ "$STATUS" -ne 0 ]; then
+
             echo ""
             echo "========================================"
             echo " ARCHIVE FALLITO"
             echo "========================================"
 
             tail -n 150 archive.log || true
+
             exit "$STATUS"
+
           fi
 
-
-      # ============================================================
-      # 17. CHECK ARCHIVE
-      # ============================================================
       - name: Check archive
         run: |
           echo "=== CONTROLLO ARCHIVE ==="
 
           if [ ! -d "Vibra.xcarchive" ]; then
+
             echo "ERRORE: archive non creato."
+
             tail -n 150 archive.log || true
+
             exit 1
+
           fi
 
           echo "Archive creato correttamente."
 
           ls -la Vibra.xcarchive
 
-
-      # ============================================================
-      # 18. CREATE EXPORT OPTIONS
-      # ============================================================
       - name: Create ExportOptions
         run: |
           cat > ExportOptions.plist <<'PLIST'
@@ -647,8 +647,10 @@ jobs:
 
               <key>provisioningProfiles</key>
               <dict>
+
                   <key>com.vibraalienmatch</key>
                   <string>VibraAppStoreNew</string>
+
               </dict>
 
               <key>destination</key>
@@ -664,10 +666,6 @@ jobs:
           </plist>
           PLIST
 
-
-      # ============================================================
-      # 19. EXPORT IPA
-      # ============================================================
       - name: Export IPA
         run: |
           set -o pipefail
@@ -687,19 +685,18 @@ jobs:
           STATUS=${PIPESTATUS[0]}
 
           if [ "$STATUS" -ne 0 ]; then
+
             echo ""
             echo "========================================"
             echo " EXPORT FALLITO"
             echo "========================================"
 
             tail -n 150 export.log || true
+
             exit "$STATUS"
+
           fi
 
-
-      # ============================================================
-      # 20. SHOW IPA
-      # ============================================================
       - name: Show IPA
         run: |
           echo "========================================"
@@ -711,10 +708,6 @@ jobs:
             -type f \
             -print
 
-
-      # ============================================================
-      # 21. UPLOAD IPA
-      # ============================================================
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
@@ -722,10 +715,6 @@ jobs:
           path: export/*.ipa
           if-no-files-found: error
 
-
-      # ============================================================
-      # 22. UPLOAD BUILD LOGS
-      # ============================================================
       - name: Upload build logs
         if: always()
         uses: actions/upload-artifact@v4
